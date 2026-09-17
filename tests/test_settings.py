@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from snaptranslate.application.settings import ReviewSettingsUseCase, TranslateSettingsUseCase
-from snaptranslate.domain.models.hotkey import DEFAULT_HOTKEYS
+from snaptranslate.domain.models.hotkey import DEFAULT_HOTKEYS, feature_hotkeys
 from snaptranslate.infrastructure.persistence.api_key_file import FileApiKeyStore
 from snaptranslate.infrastructure.persistence.json_settings import JsonSettingsRepository
 from tests._tmp import nonexistent_path, temp_dir
@@ -54,7 +54,18 @@ class TranslateSettingsTests(unittest.TestCase):
     def test_hotkeys_fall_back_to_defaults(self) -> None:
         with settings_file() as path:
             use_case = TranslateSettingsUseCase(JsonSettingsRepository(str(path)))
-            self.assertEqual(use_case.load_hotkeys(), DEFAULT_HOTKEYS)
+            # 新增功能：默认值里多了第 4 组 input（中译英输入框）
+            self.assertEqual(use_case.load_hotkeys(), feature_hotkeys())
+
+    def test_old_settings_without_input_get_default_input_hotkey(self) -> None:
+        """老设置文件只写了原版三组 → ``input`` 补默认值，其余三组**不动**（升级不重置用户设置）。"""
+        payload = {"hotkeys": {"translate": "alt+z", "snip": "tab+q", "save_last": "tab+e"}}
+        with settings_file(payload) as path:
+            use_case = TranslateSettingsUseCase(JsonSettingsRepository(str(path)))
+            self.assertEqual(
+                use_case.load_hotkeys(),
+                {"translate": "alt+z", "snip": "tab+q", "save_last": "tab+e", "input": "ctrl+i"},
+            )
 
     def test_hotkeys_ignore_invalid_entries(self) -> None:
         payload = {"hotkeys": {"translate": "CTRL + L", "snip": "bad", "save_last": "alt+f1"}}
@@ -62,7 +73,12 @@ class TranslateSettingsTests(unittest.TestCase):
             use_case = TranslateSettingsUseCase(JsonSettingsRepository(str(path)))
             self.assertEqual(
                 use_case.load_hotkeys(),
-                {"translate": "ctrl+l", "snip": DEFAULT_HOTKEYS["snip"], "save_last": "alt+f1"},
+                {
+                    "translate": "ctrl+l",
+                    "snip": feature_hotkeys()["snip"],
+                    "save_last": "alt+f1",
+                    "input": "ctrl+i",
+                },
             )
 
     def test_tts_volume_clamped(self) -> None:
@@ -74,11 +90,11 @@ class TranslateSettingsTests(unittest.TestCase):
     def test_save_hotkeys_and_volume_merge(self) -> None:
         with settings_file({"keep": 1}) as path:
             use_case = TranslateSettingsUseCase(JsonSettingsRepository(str(path)))
-            use_case.save_hotkeys(DEFAULT_HOTKEYS)
+            use_case.save_hotkeys(feature_hotkeys())
             use_case.save_tts_volume(70)
             data = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(data["keep"], 1)
-            self.assertEqual(data["hotkeys"], DEFAULT_HOTKEYS)
+            self.assertEqual(data["hotkeys"], feature_hotkeys())
             self.assertEqual(data["tts_volume"], 70)
 
     def test_save_errors_are_swallowed(self) -> None:
@@ -95,7 +111,7 @@ class TranslateSettingsTests(unittest.TestCase):
                 raise OSError("boom")
 
         use_case = TranslateSettingsUseCase(_Broken())
-        use_case.save_hotkeys(DEFAULT_HOTKEYS)
+        use_case.save_hotkeys(feature_hotkeys())
         use_case.save_tts_volume(10)
 
 

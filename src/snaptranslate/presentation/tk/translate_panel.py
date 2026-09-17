@@ -165,19 +165,27 @@ def _build_source(host: PanelHost, card: tk.Frame) -> None:
     ).pack(anchor="w", pady=(6, 0))
 
 
+#: 热键字段键名 → ``PanelHost`` 上的 Tk 变量名（``save_last`` 的变量名与原版一致，不带 ``_last``）
+HOTKEY_VAR_NAMES: dict[str, str] = {
+    "translate": "hotkey_translate_var",
+    "snip": "hotkey_snip_var",
+    "save_last": "hotkey_save_var",
+    "input": "hotkey_input_var",
+}
+
+
 def _build_hotkeys(host: PanelHost, card: tk.Frame) -> None:
-    """三组热键输入框 + "应用并保存"（原 ``main.py:1664-1706``）。"""
+    """热键输入框（原版三组 + 新增的"中译英"一组）+ "应用并保存"（原 ``main.py:1664-1706``）。
+
+    字段表来自 ``WindowText.HOTKEY_FIELDS``，因此以后再加一组只需改文案表与端口声明。
+    """
     wrap = tk.Frame(card, bg=UI_CARD)
     wrap.pack(fill="x", pady=(12, 0))
     tk.Label(wrap, text=WindowText.HOTKEY_LABEL, font=ui_font(9), **SECTION_LABEL_KW).pack(anchor="w")
     row = tk.Frame(wrap, bg=UI_CARD)
     row.pack(fill="x", pady=(5, 0))
-    entries = (
-        (WindowText.HOTKEY_FIELDS[0][0], host.hotkey_translate_var),
-        (WindowText.HOTKEY_FIELDS[1][0], host.hotkey_snip_var),
-        (WindowText.HOTKEY_FIELDS[2][0], host.hotkey_save_var),
-    )
-    for label, variable in entries:
+    for label, key in WindowText.HOTKEY_FIELDS:
+        variable = getattr(host, HOTKEY_VAR_NAMES[key])
         tk.Label(row, text=label, font=ui_font(9), **SECTION_LABEL_KW).pack(side="left")
         tk.Entry(row, textvariable=variable, font=ui_font(9, mono=True), **HOTKEY_ENTRY_KW).pack(
             side="left", padx=(4, 10)

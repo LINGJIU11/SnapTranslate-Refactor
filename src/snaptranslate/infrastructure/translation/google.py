@@ -12,7 +12,12 @@ from urllib.parse import quote
 
 import requests
 
-from snaptranslate.domain.models.translation import NO_TRANSLATION_RESULT, TranslationResult
+from snaptranslate.domain.models.translation import (
+    AUTO_TO_CHINESE,
+    NO_TRANSLATION_RESULT,
+    Direction,
+    TranslationResult,
+)
 from snaptranslate.infrastructure.network.http import get as http_get
 from snaptranslate.infrastructure.network.proxy_policy import ProxyPolicy
 from snaptranslate.infrastructure.translation.cache import TranslationCache
@@ -62,11 +67,19 @@ class GoogleClients5Translator:
         self._retries = retries
         self._policy = policy
 
-    def translate(self, text: str) -> TranslationResult:
-        hit = self._cache.get(self.cache_key, text)
+    def translate(
+        self,
+        text: str,
+        direction: Direction = AUTO_TO_CHINESE,
+    ) -> TranslationResult:
+        hit = self._cache.get(self.cache_key, text, direction.variant)
         if hit is not None:
             return TranslationResult(hit)
-        url = f"{CLIENTS5_ENDPOINT}?client=dict-chrome-ex&sl=auto&tl=zh-CN&q={quote(text, safe='')}"
+        url = (
+            f"{CLIENTS5_ENDPOINT}?client=dict-chrome-ex"
+            f"&sl={quote(direction.source, safe='')}&tl={quote(direction.target, safe='')}"
+            f"&q={quote(text, safe='')}"
+        )
         for attempt in range(self._retries):
             try:
                 resp = http_get(url, timeout=self._timeout, headers=HTTP_HEADERS, policy=self._policy)
@@ -75,7 +88,7 @@ class GoogleClients5Translator:
                 translated = parse_clients5_payload(data)
                 out = translated if translated else NO_TRANSLATION_RESULT
                 if out != NO_TRANSLATION_RESULT:
-                    self._cache.put(self.cache_key, text, out)
+                    self._cache.put(self.cache_key, text, out, direction.variant)
                 return TranslationResult(out)
             except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
                 if attempt + 1 < self._retries:

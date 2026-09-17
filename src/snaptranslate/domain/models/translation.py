@@ -19,6 +19,31 @@ NO_TRANSLATION_RESULT = "(无翻译结果)"
 
 
 @dataclass(frozen=True)
+class Direction:
+    """翻译方向（**新增功能**：中译英输入框需要显式方向，原版只有"自动 → 中文"）。
+
+    字段刻意保持"数据化"，让基础设施层自己决定怎么落到具体接口参数上：
+
+    :param source: 源语言（``"auto"`` / ``"zh-CN"``）
+    :param target: 目标语言（``"zh-CN"`` / ``"en"``）
+    :param variant: 参与**缓存键**的短标签；默认方向为空串，这样原版那一路的缓存键不变
+    :param langpair: MyMemory 的显式 ``langpair``；``None`` 表示沿用原版"按内容猜"的行为
+    """
+
+    source: str
+    target: str
+    variant: str = ""
+    langpair: str | None = None
+
+
+#: 原版唯一的方向：自动检测源语言 → 简体中文（默认参数，保证既有路径行为不变）
+AUTO_TO_CHINESE = Direction("auto", "zh-CN")
+
+#: 新增功能：中译英输入框
+CHINESE_TO_ENGLISH = Direction("zh-CN", "en", variant="zh>en", langpair="zh-CN|en")
+
+
+@dataclass(frozen=True)
 class TranslationResult:
     """一次翻译的产出：干净译文 + 可选引擎标签。"""
 

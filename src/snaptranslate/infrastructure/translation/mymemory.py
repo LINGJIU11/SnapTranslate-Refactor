@@ -14,7 +14,12 @@ import time
 import requests
 
 from snaptranslate.domain.errors import TranslationError
-from snaptranslate.domain.models.translation import NO_TRANSLATION_RESULT, TranslationResult
+from snaptranslate.domain.models.translation import (
+    AUTO_TO_CHINESE,
+    NO_TRANSLATION_RESULT,
+    Direction,
+    TranslationResult,
+)
 from snaptranslate.infrastructure.network.http import get as http_get
 from snaptranslate.infrastructure.network.proxy_policy import ProxyPolicy
 from snaptranslate.infrastructure.translation.cache import TranslationCache
@@ -45,8 +50,15 @@ def parse_mymemory_response(resp: requests.Response) -> str:
     return out
 
 
-def langpairs_for(text: str) -> tuple[str, ...]:
-    """含拉丁字母时优先 ``en|zh-CN``，否则先试自动检测（原 ``_mymemory_langpairs``）。"""
+def langpairs_for(text: str, direction: Direction = AUTO_TO_CHINESE) -> tuple[str, ...]:
+    """解释 ``langpair`` 的取值顺序。
+
+    - ``direction.langpair`` 显式给出时（如中译英的 ``zh-CN|en``）直接用它；
+    - 否则沿用原版语义：含拉丁字母时优先 ``en|zh-CN``，否则先试自动检测
+      （原 ``_mymemory_langpairs``）。
+    """
+    if direction.langpair:
+        return (direction.langpair,)
     if re.search(r"[A-Za-z]", text):
         return ("en|zh-CN", "Autodetect|zh-CN")
     return ("Autodetect|zh-CN", "en|zh-CN")
@@ -69,11 +81,15 @@ class MyMemoryTranslator:
         self._retries = retries
         self._policy = policy
 
-    def translate(self, text: str) -> TranslationResult:
-        hit = self._cache.get(self.cache_key, text)
+    def translate(
+        self,
+        text: str,
+        direction: Direction = AUTO_TO_CHINESE,
+    ) -> TranslationResult:
+        hit = self._cache.get(self.cache_key, text, direction.variant)
         if hit is not None:
             return TranslationResult(hit)
-        for langpair in langpairs_for(text):
+        for langpair in langpairs_for(text, direction):
             for attempt in range(self._retries):
                 try:
                     resp = http_get(
@@ -86,7 +102,7 @@ class MyMemoryTranslator:
                     resp.raise_for_status()
                     out = parse_mymemory_response(resp)
                     if out:
-                        self._cache.put(self.cache_key, text, out)
+                        self._cache.put(self.cache_key, text, out, direction.variant)
                         return TranslationResult(out)
                     break
                 except RuntimeError as exc:

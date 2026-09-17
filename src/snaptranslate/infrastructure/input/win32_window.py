@@ -19,6 +19,17 @@ class Win32WindowActivator:
         self._user32 = user32 if user32 is not None else ctypes.windll.user32
         self._kernel32 = kernel32 if kernel32 is not None else ctypes.windll.kernel32
 
+    def foreground(self) -> int:
+        """当前前台窗口句柄（取不到返回 0）。
+
+        新增功能"中译英输入框"用它记住"用户按热键时正在用的那个窗口"，
+        翻译返回后再把键盘焦点还回去——否则焦点会一直留在输入框里，把用户的按键吃掉。
+        """
+        try:
+            return int(self._user32.GetForegroundWindow())
+        except Exception:
+            return 0
+
     def force_foreground(self, hwnd: int) -> None:
         if hwnd <= 0:
             return

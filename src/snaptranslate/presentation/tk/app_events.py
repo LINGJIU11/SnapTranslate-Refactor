@@ -43,10 +43,12 @@ Anchor = tuple[int, int] | None
 
 #: 原 ``main.py:995``：翻译完成后光标提示"翻译完成"显示 1000ms
 DONE_CURSOR_DURATION_MS = 1000
-#: 热键动作名（原版 ``hotkeys`` 字典的三个键）
+#: 热键动作名（原版 ``hotkeys`` 字典的三个键 + 新增功能的中译英输入框）
 ACTION_TRANSLATE = "translate"
 ACTION_SNIP = "snip"
 ACTION_SAVE_LAST = "save_last"
+#: 新增功能：中译英输入框（原版没有这一路）
+ACTION_INPUT = "input"
 
 
 def resolve_hotkey_action(
@@ -59,6 +61,7 @@ def resolve_hotkey_action(
 
     - ``translate`` / ``snip``：开关关闭时不响应（返回 ``None``）；
     - ``save_last``：**不受开关影响**（原版如此，行为等价保留）；
+    - ``input``（新增功能）：也不受开关影响——它不取词，只是把用户敲进去的中文翻成英文；
     - 组合非法：不响应。
     """
     if action in (ACTION_TRANSLATE, ACTION_SNIP) and not enabled:
@@ -110,6 +113,8 @@ class TranslateJobRunner:
             self.run_translate(anchor=anchor)
         elif action == ACTION_SAVE_LAST:
             self.run_save_last(anchor=anchor)
+        elif action == ACTION_INPUT:
+            self.run_show_input(anchor=anchor)
         else:
             # 截图：主线程开遮罩，遮罩松手后再开 worker 线程（遮罩自己带选区锚点）
             self._sink.begin_snip()
@@ -157,6 +162,24 @@ class TranslateJobRunner:
             no_text_hint=WindowText.NO_SNIP_TEXT_HINT,
         )
         self.handle_outcome(outcome, anchor=anchor or (bbox.left, bbox.bottom))
+
+    # ———————————————————————————— 中译英输入框（新增功能）————————————————————————————
+
+    def run_show_input(self, *, anchor: Anchor = None) -> None:
+        """主线程：把中译英输入框弹到锚点旁边（不取词，因此不看"启用划词"开关）。"""
+        self._sink.show_input_box(anchor=anchor)
+
+    def submit_input(self, text: str, done) -> None:
+        """开 worker 线程跑"输入翻译"用例，结果切回主线程交给输入框渲染。
+
+        :param done: ``Callable[[TranslationOutcome], None]``，**在主线程**被调用。
+        """
+        threading.Thread(target=self._run_input_job, args=(text, done), daemon=True).start()
+
+    def _run_input_job(self, text: str, done) -> None:
+        use_case = self._deps.input_usecase_factory(self._sink.current_source)
+        outcome = use_case.execute(text)
+        self._sink.post(lambda: done(outcome))
 
     def run_collect(self, word: str, meaning: str, *, anchor: Anchor = None) -> None:
         """原 ``_do_save_vocab_job``：判空/判重/落盘在用例里，这里只做反馈。
@@ -291,6 +314,7 @@ class TranslateJobRunner:
 
 
 __all__ = [
+    "ACTION_INPUT",
     "ACTION_SAVE_LAST",
     "ACTION_SNIP",
     "ACTION_TRANSLATE",

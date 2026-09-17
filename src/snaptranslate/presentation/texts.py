@@ -76,7 +76,8 @@ class WindowText:
     )
     HOTKEY_LABEL = "快捷键设置（格式：ctrl+l / tab+q）"
     HOTKEY_APPLY = "应用并保存"
-    HOTKEY_FIELDS = (("翻译", "translate"), ("截图", "snip"), ("收录", "save_last"))
+    #: 第 4 组是新增功能（中译英输入框），见 KNOWN_ISSUES.md 偏差 D15
+    HOTKEY_FIELDS = (("翻译", "translate"), ("截图", "snip"), ("收录", "save_last"), ("中译英", "input"))
     TTS_VOLUME_LABEL = "英文朗读音量（独立于系统音量）"
     RECENT_TRANSLATIONS_LABEL = "最近 3 条翻译（可直接收录生词本）"
     # —— 代理（KNOWN_ISSUES.md #25）——
@@ -99,7 +100,8 @@ class WindowText:
     FLOATING_COLLECT_BUTTON = "收录生词本"
     READY = "就绪"
     HOTKEY_ERROR_FORMAT = "快捷键格式错误：{name}={value}（示例：ctrl+l / tab+q）"
-    HOTKEY_DUPLICATE = "快捷键不能重复，请设置 3 组不同组合"
+    #: 新增功能加入第 4 组热键（中译英输入框），故原版"3 组"改为"4 组"（偏差 D15）
+    HOTKEY_DUPLICATE = "快捷键不能重复，请设置 4 组不同组合"
     SNIP_HINT = "拖拽框选要 OCR 的区域（松开鼠标确认 / ESC 取消）"
     SNIP_HINT_SHORT = "截图模式：拖拽选择区域，ESC 取消"
     SNIP_CANVAS_HINT = "拖拽框选要 OCR 翻译的区域（松开鼠标确认 / ESC 取消）"
@@ -114,7 +116,8 @@ class WindowText:
         return (
             f"已开启 — {label_or_placeholder(hotkeys.get('translate', ''))} 划词翻译，"
             f"{label_or_placeholder(hotkeys.get('snip', ''))} 截图 OCR，"
-            f"{label_or_placeholder(hotkeys.get('save_last', ''))} 收录最近一条"
+            f"{label_or_placeholder(hotkeys.get('save_last', ''))} 收录最近一条，"
+            f"{label_or_placeholder(hotkeys.get('input', ''))} 中译英输入框"
         )
 
     @staticmethod
@@ -130,7 +133,8 @@ class WindowText:
         return (
             f"划词翻译：{label_or_placeholder(hotkeys.get('translate', ''))}  |  "
             f"截图 OCR：{label_or_placeholder(hotkeys.get('snip', ''))}  |  "
-            f"收录：{label_or_placeholder(hotkeys.get('save_last', ''))}"
+            f"收录：{label_or_placeholder(hotkeys.get('save_last', ''))}  |  "
+            f"中译英：{label_or_placeholder(hotkeys.get('input', ''))}"
         )
 
     @staticmethod
@@ -408,10 +412,25 @@ class AdminText:
     READ_FAILED_STATUS = "读取词表失败：{error}"
 
 
+class InputText:
+    """中译英输入框的文案（**新增功能**，原版没有这条路径）。"""
+
+    TITLE = "中译英"
+    HINT = "Enter 翻译 · Shift+Enter 换行 · Esc 关闭 · 点回框内继续输入"
+    PLACEHOLDER = "（在此输入中文，回车翻译成英文）"
+    OUTPUT_PLACEHOLDER = "（英文会显示在这里）"
+    PENDING = "翻译中…"
+    EMPTY = "请先输入要翻译的中文"
+    TRUNCATED = "输入过长，已只翻译前 {limit} 个字符"
+    TRANSLATE_BUTTON = "翻译"
+    CLOSE_BUTTON = "关闭"
+
+
 __all__ = [
     "AdminText",
     "CollectText",
     "ErrorTitle",
+    "InputText",
     "ReviewText",
     "Stage",
     "StatusText",

@@ -88,6 +88,7 @@
 | `ReviewUseCase` | 驱动 `ReviewSession` + 评分持久化 + 自动朗读 | `vocab_review.py`、`vocab_review_web.py` |
 | `GenerateExamplesUseCase` | 批量补全例句，逐条落盘，402 中止 | 同上 |
 | `VocabularyAdminUseCase` | 词表状态、评分重置、备份清理 | `set.py` |
+| `TranslateInputUseCase` | **新增功能**：把用户手敲的中文翻成英文（方向显式传入，其余复用同一翻译端口） | 原版无此路径 |
 
 ### 2.5 `presentation/` — 表示层
 - `texts.py`：**全部界面文案的唯一出口**（`WindowText` / `StatusText` / `ErrorTitle` / `CollectText` / `ReviewText` / `AdminText` / `WebText`）。Tk 与 Streamlit 共用同一套字符串与格式化函数。
@@ -98,6 +99,9 @@
   - `app_events.py`：热键回调 → 线程调度 → 用例调用 → 结果分发；
   - `hotkey_controls.py` / `collect_actions.py` / `translate_transcript.py`：热键校验、收录/删除反馈、翻译记录与"最近 3 条"；
   - `floating_card.py` / `cursor_status.py` / `snip_overlay.py`：悬浮卡片、光标状态条、截图遮罩；
+  - `input_box.py`：**新增功能**——中译英浮层输入/输出框（可复用组件：只依赖端口与一个提交回调）；
+  - `overlay_geometry.py`：浮层共用的几何（`+16` 偏移、夹在屏内、`is_inside` 命中判定）——
+    `floating_card` 与 `input_box` 只写一份；
   - `ui_kit.py`：控件工厂 + `UiDispatcher` / `StatusBridge`。
 - `tk/` — 复习与后台管理（原 `vocab_review.py` / `set.py`）：
   `review_window.py`、`admin_window.py`、`card_controller.py`、`card_form.py`、`settings_form.py`、
@@ -180,6 +184,17 @@ SnapTranslate重构/
     分层把"谁负责重绘"推给了控制器，就不能再依赖调用方记得补一句 `_show_card()`——
     这个坑已经踩过一次（阶段一漏搬原版 `_advance_after_grade()` 末尾那一行），
     现在由 `gui_smoke --with-tk` 的真实 Tk 断言（界面词 = 会话词）兜住。
+14. **翻译方向是"数据"，不是新方法**（新增功能）：`Translator.translate(text, direction=AUTO_TO_CHINESE)`
+    用一个默认参数把方向带进来——默认值与原版唯一的"自动 → 简体中文"完全一致，
+    因此划词/截图那两条路径的 URL、缓存键、日志一个字都没变（对拍 173 项仍 0 差异）；
+    中译英只需显式传 `CHINESE_TO_ENGLISH`。方向同时参与**缓存键**（`variant`），
+    否则"书"的中→英结果会把"书"的自动→中结果覆盖掉。
+15. **浮层输入框的交互由"焦点状态 + 命中判定"两件事决定**（新增功能）：
+    `OverlayInputBox` 自己维护"是否正在输入"——在输入态下，全局输入监听看到的按键就是**输入**；
+    翻译返回后把键盘焦点还给"按热键时用户正在用的窗口"（`WindowActivator.foreground()` 记、`force_foreground()` 还），
+    于是"再按其他键"既能关掉浮层、按键也照常送到原来的软件里；
+    鼠标左键落在框内**不算关闭信号**，而是回到输入态（`overlay_geometry.is_inside`）。
+    这样"关闭规则"与"复用规则"各由一条明确判据负责，不需要给按键逐一列白名单。
 
 ## 5. 验证策略
 
@@ -189,7 +204,7 @@ SnapTranslate重构/
 | 分层约束 | `python scripts/check_layering.py` | 依赖方向、禁止跨层 import（AST 静态校验） |
 | 单元测试 | `python -m unittest discover -s tests -t .`（或 `pytest tests`） | 评分、复习会话、**复习卡片控制器**、清洗、热键解析、翻译响应解析、词表 IO 三种语义、设置两种写语义、备份、用例编排、表示层纯逻辑 |
 | 与原版逐函数对拍 | `python scripts/parity_check.py <原版目录>` | 纯函数 + **流程级**（文本翻译主链路、生词收录分支），当前 173 项 0 差异 |
-| Tk 界面冒烟 | `python scripts/gui_smoke.py --with-tk` | 真实创建三个窗口（构造后立即销毁，不进 mainloop）+ **事件链断言**（热键即时同步、卡片锚点/不自动消失/输入关闭、代理即时生效、**评分后卡片前进**） |
+| Tk 界面冒烟 | `python scripts/gui_smoke.py --with-tk` | 真实创建三个窗口（构造后立即销毁，不进 mainloop）+ **事件链断言**（热键即时同步/四组热键、卡片锚点/不自动消失/输入关闭、代理即时生效、复习评分后卡片前进、**输入框弹出→回车翻译→点框内复用→框外关闭→过期结果丢弃**） |
 | Streamlit 结构对拍 | `python scripts/web_smoke.py` | 用官方 `AppTest` 渲染新页面并与原版逐项比较标题/按钮/下拉框/输入框/小标题 |
 
 > 这些脚本都是"可执行的约束"：分层违规、行为漂移、装配断裂、界面建不起来都会让命令非 0 退出。

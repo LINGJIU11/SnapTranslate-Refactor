@@ -72,8 +72,17 @@ def build_container() -> None:
 
 def pure_logic() -> None:
     section("3. 关键纯函数")
-    from snaptranslate.domain.models.hotkey import DEFAULT_HOTKEYS, Hotkey, label_or_placeholder
-    from snaptranslate.domain.models.translation import TranslationResult
+    from snaptranslate.domain.models.hotkey import (
+        DEFAULT_HOTKEYS,
+        Hotkey,
+        feature_hotkeys,
+        label_or_placeholder,
+    )
+    from snaptranslate.domain.models.translation import (
+        AUTO_TO_CHINESE,
+        CHINESE_TO_ENGLISH,
+        TranslationResult,
+    )
     from snaptranslate.domain.models.vocab_entry import Vocabulary
     from snaptranslate.domain.services.review_session import ReviewSession
     from snaptranslate.domain.services.scoring import apply_grade, item_score
@@ -92,6 +101,15 @@ def pure_logic() -> None:
     check("Hotkey 解析非法", Hotkey.parse("ctrl+") is None and Hotkey.parse("meta+k") is None)
     check("热键标签占位", label_or_placeholder("") == "（未设置）" and Hotkey.parse("ctrl+l").label == "CTRL+L")
     check("默认热键三组", set(DEFAULT_HOTKEYS) == {"translate", "snip", "save_last"})
+    check(
+        "默认热键四组（含新增的中译英输入框）",
+        set(feature_hotkeys()) == {"translate", "snip", "save_last", "input"}
+        and feature_hotkeys()["input"] == "ctrl+i",
+    )
+    check(
+        "翻译方向：默认自动→中，新增中→英",
+        AUTO_TO_CHINESE.variant == "" and CHINESE_TO_ENGLISH.langpair == "zh-CN|en",
+    )
     check(
         "TranslationResult.display_text 带标签",
         TranslationResult("你好", "Google").display_text == "你好\n（Google 最快返回）",

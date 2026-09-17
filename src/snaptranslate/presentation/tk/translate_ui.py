@@ -27,6 +27,8 @@ class PanelHost(Protocol):
     hotkey_translate_var: tk.StringVar
     hotkey_snip_var: tk.StringVar
     hotkey_save_var: tk.StringVar
+    #: 新增功能：中译英输入框的热键（见 KNOWN_ISSUES.md 偏差 D15）
+    hotkey_input_var: tk.StringVar
     status_var: tk.StringVar
     recent_vars: list[tk.StringVar]
     recent_saved_vars: list[tk.StringVar]

@@ -77,6 +77,10 @@ class ResultSink(Protocol):
 
     def submit_screenshot(self, bbox: BBox) -> None: ...
 
+    def show_input_box(self, *, anchor: tuple[int, int] | None = None) -> None:
+        """弹出"中译英输入框"（**新增功能**，要求主线程）。"""
+        ...
+
 
 class FeedbackSink(Protocol):
     """``CollectionFeedback`` 依赖的能力集合。"""
@@ -116,6 +120,8 @@ class PresenterHost(Protocol):
     def begin_snip(self) -> None: ...
 
     def submit_screenshot(self, bbox: BBox) -> None: ...
+
+    def show_input_box(self, *, anchor: tuple[int, int] | None = None) -> None: ...
 
     def remember_last_translation(self, original: str, translated: str) -> None: ...
 
@@ -271,6 +277,12 @@ class ResultPresenter:
 
     def submit_screenshot(self, bbox: BBox) -> None:
         self._host.submit_screenshot(bbox)
+
+    # ———————————————————————————— 端口：中译英输入框（新增功能）————————————————————————————
+
+    def show_input_box(self, *, anchor: tuple[int, int] | None = None) -> None:
+        """弹出输入框（原版没有这条路径；热键已在监听线程取好锚点）。"""
+        self._host.show_input_box(anchor=anchor)
 
 
 __all__ = ["FeedbackSink", "PresenterHost", "ResultPresenter", "ResultSink"]

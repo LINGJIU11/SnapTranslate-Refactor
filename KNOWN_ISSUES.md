@@ -10,9 +10,11 @@
 **复习界面评分后卡片不前进（#28，阶段一回归）**
 ——见 §五 `[修复]`。修完仍有回归测试兜底，其余条目状态不变。
 
+**此后开始加功能**：新增能力（如中译英输入框）单独登记在 §七 `[新增]`，不混进"缺陷/偏差"。
+
 标记说明：`[保留]` = 行为等价保留；`[修复]` = 已主动修掉（偏离原版，配回归测试）；
-`[偏差]` = 本轮有意引入的差异；`[历史]` = 仓库遗留问题；
-`[已缓解]` / `[已修]` / `[已失效]` = 后续修复（F1–F8）带来的状态变化，括号内指向对应条目。
+`[偏差]` = 本轮有意引入的差异；`[历史]` = 仓库遗留问题；`[新增]` = 原版没有的新功能（见 §七）；
+`[已缓解]` / `[已修]` / `[已失效]` = 后续修复（F1–F9）带来的状态变化，括号内指向对应条目。
 
 ---
 
@@ -150,6 +152,8 @@
 | D13 | **F7（#26）**：删除 gtx 与 Lingva 两条线路，竞速从 5 路降到 2 路（clients5 + MyMemory） | 见 §五；实测两条都是失效线路（gtx 429 / Lingva 403，直连与代理下均失败），保留只是浪费并发与配额 |
 | D14 | **F8（#27）**：引擎标签只留在日志，不再画到悬浮卡片上（`TranslationResult.card_text`） | 见 §五；卡片回归"干净译文"，同时顺手掐掉 #6 的标签污染源 |
 | — | **F9（#28）不属于偏差**：复习界面"评分后卡片不前进"是**阶段一引入的回归**，修复只是把原版行为补回来 | 见 §五 F9；原版 `_advance_after_grade()` 末尾本来就有 `_show_card()` |
+| D15 | **新增功能（中译英输入框）**：第 4 组热键 `input`（默认 `ctrl+i`）+ 界面上的第 4 个输入框；标题提示行与状态栏文案多一段"中译英"；"快捷键不能重复"由"3 组"改为"**4 组**" | 用户要求的新功能，见 §七；`DEFAULT_HOTKEYS`（原版三组）保持不动，`feature_hotkeys()` 才是程序完整默认值；老设置文件只补 `input`，其余三组不改 |
+| D16 | **翻译端口多了一个方向参数**：`Translator.translate(text, direction=AUTO_TO_CHINESE)`（引擎 URL 与缓存键随方向变化） | 见 §七；默认值等价于原版"自动 → 简体中文"，因此划词/截图两条路径的请求与缓存键**一字未变**（对拍 173 项仍 0 差异） |
 
 ---
 
@@ -322,8 +326,6 @@
   **"GUI 事件链"这一层是空的**——按钮 → 用例 → 重绘之间掉一环，所有门禁都不会响。
   现已在该层补上断言；后续凡是"原版某处调用了渲染方法"的搬迁，都要在 `gui_smoke` 里留一条对应断言。
 
----
-
 ## 六、仓库历史遗留 `[历史]`
 
 | # | 现象 | 说明 |
@@ -332,3 +334,29 @@
 | H2 | `image/1.png` 等实为 JPEG 字节 | 扩展名与内容不符（浏览器可容错显示） |
 | H3 | 原仓库 `__pycache__/quick_select_translate.cpython-310.pyc` | 已删除模块的残留，说明历史上还有"快速划词"模块 |
 | H4 | 上游最后提交 2026-05-22，无 release、无打包 | 23 star / 4 fork 的个人项目，不提供预编译产物 |
+---
+
+## 七、新增功能（原版没有的能力）`[新增]`
+
+阶段一交付的是"行为等价的重构"，此后按你的要求开始加功能。为免与上面的"缺陷/偏差"混在一起，
+新增能力单独登记在这里；每条都写明**与原版的关系**（哪些是加法、默认行为是否变化）。
+
+### N1 中译英输入框（`ctrl+i`）`[新增]`
+- **能力**：按热键弹出浮层，上格输入中文、下格显示英文；回车翻译，中文留在输入框里；
+  翻译返回后把键盘焦点还给"按热键时你正在用的窗口"，因此再按任意键即可关闭浮层，且按键照常送到那个软件；
+  鼠标左键点在浮层内**不算关闭**，而是回到输入态继续改/继续翻；框外输入、框外点击、Esc 关闭；不自动消失。
+- **模块化落点**：`domain/models/translation.py:Direction` → `Translator.translate(text, direction)` →
+  `application/translate_input.py:TranslateInputUseCase` → `presentation/tk/input_box.py:OverlayInputBox`
+  （几何与命中判定与悬浮卡片共用 `presentation/tk/overlay_geometry.py`）。
+- **与原版的关系**：
+  - 默认方向 `AUTO_TO_CHINESE` 与原版唯一的"自动 → 简体中文"完全一致 ⇒ 既有两条路径的 URL/缓存键/日志不变；
+  - 热键链路是加法：`HotkeyBindings.input` 与 `HotkeyCallbacks.on_input` 均为可选字段（缺省即不生效）；
+  - 文案与"4 组"判重见偏差 D15。
+- **实测**：`你好，世界 → Hello world`、`这个功能很好用，谢谢 → This function works well, thank you`（引擎标签只进日志）。
+- **代码**：`application/translate_input.py`、`presentation/tk/{input_box,overlay_geometry}.py`、
+  `presentation/texts.py:InputText`、`domain/ports/{translator,window,hotkey_listener}.py`、
+  `infrastructure/{translation/*,input/win32_hotkeys.py,input/win32_window.py}`、`presentation/tk/{app_events,translate_window,translate_panel,translate_shell,translate_sink,hotkey_controls}.py`
+- **回归测试**：`tests/test_use_cases.py::TranslateInputUseCaseTests`（6 项）、
+  `tests/test_translation_infra.py`（方向解析 / 缓存隔离 / 竞速透传 4 项）、
+  `tests/test_presentation_pure.py`（`OverlayGeometryTests` 3 项 + 热键四组 2 项）、
+  `scripts/gui_smoke.py --with-tk`（输入框 12 条 + 四组热键 2 条真实 Tk 断言）

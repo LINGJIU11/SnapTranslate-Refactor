@@ -43,6 +43,7 @@ from snaptranslate.domain.ports.hotkey_listener import HotkeyBindings, HotkeyCal
 from snaptranslate.domain.services.text_cleaning import clean_text
 from snaptranslate.presentation.texts import CollectText, WindowText
 from snaptranslate.presentation.tk.app_events import (
+    ACTION_INPUT,
     ACTION_SAVE_LAST,
     ACTION_SNIP,
     ACTION_TRANSLATE,
@@ -52,6 +53,7 @@ from snaptranslate.presentation.tk.collect_actions import CollectionFeedback
 from snaptranslate.presentation.tk.cursor_status import CursorStatusWindow
 from snaptranslate.presentation.tk.floating_card import FloatingCard
 from snaptranslate.presentation.tk.hotkey_controls import HotkeyManager
+from snaptranslate.presentation.tk.input_box import OverlayInputBox
 from snaptranslate.presentation.tk.snip_overlay import SnipOverlay
 from snaptranslate.presentation.tk.translate_shell import build_translate_window
 from snaptranslate.presentation.tk.translate_sink import ResultPresenter
@@ -77,6 +79,8 @@ class TranslateApp:
         self.hotkey_translate_var: tk.StringVar | None = None
         self.hotkey_snip_var: tk.StringVar | None = None
         self.hotkey_save_var: tk.StringVar | None = None
+        #: 新增功能：中译英输入框热键
+        self.hotkey_input_var: tk.StringVar | None = None
         self.hotkey_hint_var: tk.StringVar | None = None
         self.log_text: scrolledtext.ScrolledText | None = None
         self.recent_vars: list[tk.StringVar] = []
@@ -97,6 +101,8 @@ class TranslateApp:
         self._feedback: CollectionFeedback | None = None
         self._runner: TranslateJobRunner | None = None
         self._floating: FloatingCard | None = None
+        #: 新增功能：中译英输入框（浮层输入/输出）
+        self._input_box: OverlayInputBox | None = None
         self._cursor: CursorStatusWindow | None = None
         self._snip: SnipOverlay | None = None
 
@@ -126,6 +132,8 @@ class TranslateApp:
         if self._floating is not None:
             # 停掉"任意键/鼠标键"监听线程，避免退出后还有线程在查键态
             self._floating.shutdown()
+        if self._input_box is not None:
+            self._input_box.shutdown()
         if self.root is not None:
             self.root.destroy()
 
@@ -154,6 +162,16 @@ class TranslateApp:
         self._presenter = ResultPresenter(
             root=root, transcript=transcript, cursor=self._cursor, floating=self._floating, host=self
         )
+        # 新增功能：中译英输入框。提交回调把"翻译"这件事交给用例（worker 线程），
+        # 结果由编排器切回主线程后交还给它自己渲染。
+        self._input_box = OverlayInputBox(
+            root,
+            pointer=self.deps.pointer,
+            input_watcher=self.deps.input_watcher,
+            window_activator=self.deps.window_activator,
+            marshal=lambda fn: root.after(0, fn),
+            on_submit=self._submit_input_text,
+        )
         self._snip = SnipOverlay(
             root,
             window_activator=self.deps.window_activator,
@@ -181,14 +199,27 @@ class TranslateApp:
             on_translate=runner.dispatch(ACTION_TRANSLATE),
             on_snip=runner.dispatch(ACTION_SNIP),
             on_save_last=runner.dispatch(ACTION_SAVE_LAST),
+            on_input=runner.dispatch(ACTION_INPUT),
             on_error=self._on_hotkeys_error,
         )
 
     def _build_bindings(self) -> HotkeyBindings:
-        """把当前热键设置解析成监听端口需要的三组 :class:`Hotkey`。"""
+        """把当前热键设置解析成监听端口需要的组合（原版三组 + 新增的输入框一组）。"""
         parsed = self._hotkeys.bindings()
         self.hotkeys = self._hotkeys.hotkeys
-        return HotkeyBindings(translate=parsed["translate"], snip=parsed["snip"], save_last=parsed["save_last"])
+        return HotkeyBindings(
+            translate=parsed["translate"],
+            snip=parsed["snip"],
+            save_last=parsed["save_last"],
+            input=parsed.get("input"),
+        )
+
+    # ———————————————————————— 中译英输入框（新增功能）————————————————————————
+
+    def _submit_input_text(self, text: str, done) -> None:
+        """输入框的提交回调：开 worker 线程跑用例，结果切回主线程交给输入框渲染。"""
+        runner = self._require_runner()
+        runner.submit_input(text, done)
 
     def _on_hotkeys_error(self, message: str) -> None:
         """监听器报告的错误（原 ``_show_hotkey_fail``：只写状态栏）。"""
@@ -204,6 +235,9 @@ class TranslateApp:
             ACTION_TRANSLATE: HotkeyManager.normalize(self.hotkey_translate_var.get()),
             ACTION_SNIP: HotkeyManager.normalize(self.hotkey_snip_var.get()),
             ACTION_SAVE_LAST: HotkeyManager.normalize(self.hotkey_save_var.get()),
+            ACTION_INPUT: HotkeyManager.normalize(
+                self.hotkey_input_var.get() if self.hotkey_input_var is not None else ""
+            ),
         }
         error = self._hotkeys.validate(pending)
         if error is not None:
@@ -335,6 +369,12 @@ class TranslateApp:
 
     def refresh_saved_ui(self) -> None:
         self._refresh_recent_saved_ui()
+
+    def show_input_box(self, *, anchor: tuple[int, int] | None = None) -> None:
+        """``PresenterHost`` 契约（新增功能）：弹出中译英输入框。"""
+        if self._input_box is None:
+            return
+        self._input_box.show(anchor)
 
     # ———————————————————————— 截图 ————————————————————————
 

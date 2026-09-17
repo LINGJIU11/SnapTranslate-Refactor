@@ -16,11 +16,17 @@ from snaptranslate.domain.models.hotkey import Hotkey
 
 @dataclass(frozen=True)
 class HotkeyBindings:
-    """三组快捷键（原 ``main_settings.json`` 的 ``hotkeys`` 字段）。"""
+    """热键组合（原 ``main_settings.json`` 的 ``hotkeys`` 字段）。
+
+    ``input`` 是**新增功能**（中译英输入框）用的第 4 组；给默认值 ``None`` 是为了
+    让"只关心原版三组"的调用方（测试替身、旧配置）不必关心它。
+    """
 
     translate: Hotkey
     snip: Hotkey
     save_last: Hotkey
+    #: 中译英输入框；``None`` = 该功能未绑定
+    input: Hotkey | None = None
 
 
 @dataclass(frozen=True)
@@ -31,6 +37,8 @@ class HotkeyCallbacks:
     on_snip: Callable[[], None]
     on_save_last: Callable[[], None]
     on_error: Callable[[str], None] | None = None
+    #: 新增功能：输入框热键（未提供时该组合不触发任何东西）
+    on_input: Callable[[], None] | None = None
 
 
 @runtime_checkable

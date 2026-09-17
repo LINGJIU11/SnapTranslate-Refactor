@@ -11,12 +11,14 @@ import ctypes
 import threading
 import time
 from ctypes import wintypes
+from typing import Callable
 
 from snaptranslate.domain.models.hotkey import Hotkey
 from snaptranslate.domain.ports.hotkey_listener import HotkeyBindings, HotkeyCallbacks
 from snaptranslate.infrastructure.input.win32_keys import (
     HOTKEY_ID,
     MOD_CONTROL,
+    VK_TAB,
     WM_HOTKEY,
     WM_QUIT,
     modifier_vk,
@@ -25,6 +27,18 @@ from snaptranslate.infrastructure.input.win32_keys import (
 
 #: 原 ``main.py:1455``：轮询间隔 8ms
 POLL_INTERVAL_SEC = 0.008
+
+#: 热键动作的固定顺序（原版循环里就是 translate → snip → save_last 这个次序）
+_BINDING_ORDER: tuple[str, ...] = ("translate", "snip", "save_last", "input")
+
+
+def _binding_of(bindings: HotkeyBindings, action: str) -> Hotkey | None:
+    """按动作名取组合；``input`` 是新增的第 4 组，可能未绑定。"""
+    return getattr(bindings, action, None)
+
+
+def _callback_of(callbacks: HotkeyCallbacks, action: str) -> Callable[[], None] | None:
+    return getattr(callbacks, f"on_{action}", None)
 
 
 class Win32PollingHotkeyListener:
@@ -75,76 +89,80 @@ class Win32PollingHotkeyListener:
             return self._bindings
 
     def _loop(self, callbacks: HotkeyCallbacks) -> None:
-        prev_translate = False
-        prev_snip = False
-        prev_save = False
-        prev_snip_tab = False
-        prev_snip_key = False
-        prev_save_tab = False
-        prev_save_key = False
+        #: 每一路热键一个检测器（``tab+X`` 用 Tab 边沿，其余用"修饰键+键同按"）
+        detectors: dict[str, "_BindingDetector"] = {
+            action: _BindingDetector(self._is_down) for action in _BINDING_ORDER
+        }
 
         while not self._stopping:
             bindings = self._current_bindings()
             if bindings is None:  # pragma: no cover - start() 之后不可能为空
                 time.sleep(self._poll_interval)
                 continue
-            pressed_translate = self._is_hotkey_pressed(bindings.translate)
 
-            if bindings.snip.modifier == "tab":
-                pressed_snip, prev_snip_tab, prev_snip_key = self._tab_mod_key_fire_edge(
-                    bindings.snip, prev_snip_tab, prev_snip_key
-                )
-            else:
-                pressed_snip = self._is_hotkey_pressed(bindings.snip)
-                prev_snip_tab = False
-                prev_snip_key = False
+            # 先全部判定、再统一触发：与原版"三个 pressed_* 都算完再 if"的顺序一致
+            fired: dict[str, bool] = {}
+            for action in _BINDING_ORDER:
+                hotkey = _binding_of(bindings, action)
+                fired[action] = False if hotkey is None else detectors[action].fired(hotkey)
 
-            if bindings.save_last.modifier == "tab":
-                pressed_save, prev_save_tab, prev_save_key = self._tab_mod_key_fire_edge(
-                    bindings.save_last, prev_save_tab, prev_save_key
-                )
-            else:
-                pressed_save = self._is_hotkey_pressed(bindings.save_last)
-                prev_save_tab = False
-                prev_save_key = False
+            for action in _BINDING_ORDER:
+                callback = _callback_of(callbacks, action)
+                if fired[action] and callback is not None:
+                    callback()
 
-            if pressed_translate and not prev_translate:
-                callbacks.on_translate()
-            if pressed_snip and not prev_snip:
-                callbacks.on_snip()
-            if pressed_save and not prev_save:
-                callbacks.on_save_last()
-
-            prev_translate = pressed_translate
-            prev_snip = pressed_snip
-            prev_save = pressed_save
             time.sleep(self._poll_interval)
 
     def _is_down(self, vk: int) -> bool:
         return bool(self._user32.GetAsyncKeyState(vk) & 0x8000)
 
-    def _is_hotkey_pressed(self, hotkey: Hotkey) -> bool:
+
+class _BindingDetector:
+    """一路热键的边沿检测（把原来散在循环里的 7 个 ``prev_*`` 变量收进来）。
+
+    - 普通组合（``ctrl+l`` / ``alt+z`` / …）：修饰键与目标键**同时按下**，且上一轮没按下；
+    - ``tab+X``：Tab 不是真正的修饰键，用"边沿检测"兼容"先按 Tab 再按 X / 先按 X 再按 Tab /
+      同时按"三种手法（原 ``main.py:_tab_mod_key_fire_edge`` 逐行等价）。
+    """
+
+    def __init__(self, is_down: Callable[[int], bool]) -> None:
+        self._is_down = is_down
+        self._prev_pressed = False
+        self._prev_tab = False
+        self._prev_key = False
+
+    def fired(self, hotkey: Hotkey) -> bool:
+        if hotkey.modifier == "tab":
+            return self._tab_edge(hotkey)
+        self._prev_tab = False
+        self._prev_key = False
+        pressed = self._plain(hotkey)
+        fired = pressed and not self._prev_pressed
+        self._prev_pressed = pressed
+        return fired
+
+    def _plain(self, hotkey: Hotkey) -> bool:
         key_vk = vk_from_key_token(hotkey.key)
         mod_vk = modifier_vk(hotkey)
         if key_vk is None or mod_vk is None:
             return False
         return self._is_down(mod_vk) and self._is_down(key_vk)
 
-    def _tab_mod_key_fire_edge(
-        self, hotkey: Hotkey, prev_tab: bool, prev_key: bool
-    ) -> tuple[bool, bool, bool]:
+    def _tab_edge(self, hotkey: Hotkey) -> bool:
         """``Tab+X`` 组合的边沿检测（原 ``_tab_mod_key_fire_edge`` 逐行等价）。"""
         key_vk = vk_from_key_token(hotkey.key)
         if key_vk is None:
-            return False, False, False
-        tab_down = self._is_down(0x09)
+            return False
+        tab_down = self._is_down(VK_TAB)
         key_down = self._is_down(key_vk)
         fire = (
-            (key_down and not prev_key and tab_down)
-            or (tab_down and not prev_tab and key_down)
-            or ((tab_down and key_down) and not (prev_tab and prev_key))
+            (key_down and not self._prev_key and tab_down)
+            or (tab_down and not self._prev_tab and key_down)
+            or ((tab_down and key_down) and not (self._prev_tab and self._prev_key))
         )
-        return fire, tab_down, key_down
+        self._prev_tab = tab_down
+        self._prev_key = key_down
+        return fire
 
 
 class Win32RegisteredHotkeyListener:

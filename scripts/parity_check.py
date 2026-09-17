@@ -173,12 +173,12 @@ def parity_translate_flow(main_mod) -> None:
     from snaptranslate.application.dto import OutcomeKind
     from snaptranslate.application.progress import ProgressReporter
     from snaptranslate.application.translate_text import TranslateTextUseCase
-    from snaptranslate.domain.models.translation import TranslationResult
+    from snaptranslate.domain.models.translation import AUTO_TO_CHINESE, Direction, TranslationResult
 
     class _Translator:
         name = "fake"
 
-        def translate(self, text: str) -> TranslationResult:
+        def translate(self, text: str, direction: Direction = AUTO_TO_CHINESE) -> TranslationResult:
             return TranslationResult("你好", "Fake")
 
     class _Tts:

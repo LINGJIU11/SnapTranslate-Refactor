@@ -16,18 +16,23 @@
 
 from __future__ import annotations
 
-from snaptranslate.domain.models.hotkey import DEFAULT_HOTKEYS, Hotkey, label_or_placeholder
+from snaptranslate.domain.models.hotkey import (
+    ALL_HOTKEY_KEYS,
+    Hotkey,
+    feature_hotkeys,
+    label_or_placeholder,
+)
 from snaptranslate.presentation.texts import WindowText
 
-#: 三组热键的内部键名（顺序与原版 ``pending`` 字典一致）
-HOTKEY_KEYS: tuple[str, ...] = ("translate", "snip", "save_last")
+#: 界面上的全部热键（原版三组 + 新增的输入框一组），顺序与原版 ``pending`` 字典一致
+HOTKEY_KEYS: tuple[str, ...] = ALL_HOTKEY_KEYS
 
 
 class HotkeyManager:
     """持有当前热键设置，并提供校验 / 标签 / 绑定解析。"""
 
     def __init__(self, hotkeys: dict[str, str] | None = None) -> None:
-        self._hotkeys: dict[str, str] = dict(hotkeys or DEFAULT_HOTKEYS)
+        self._hotkeys: dict[str, str] = dict(hotkeys or feature_hotkeys())
 
     # —— 状态 ——
 
@@ -55,7 +60,7 @@ class HotkeyManager:
         return WindowText.status_disabled(self._hotkeys)
 
     def bindings(self) -> dict[str, Hotkey]:
-        """解析成三组 :class:`Hotkey`；任一组非法则整体回退默认值并写回。
+        """解析成各组 :class:`Hotkey`；任一组非法则整体回退默认值并写回。
 
         与 ``settings.load_hotkeys`` 的语义一致（非法组合回退默认），
         保证监听端口永远拿得到可用组合。
@@ -64,8 +69,8 @@ class HotkeyManager:
         for key in HOTKEY_KEYS:
             hotkey = Hotkey.parse(self._hotkeys.get(key, ""))
             if hotkey is None:
-                self._hotkeys = dict(DEFAULT_HOTKEYS)
-                return {name: Hotkey.parse(DEFAULT_HOTKEYS[name]) for name in HOTKEY_KEYS}  # type: ignore[misc]
+                self._hotkeys = feature_hotkeys()
+                return {name: Hotkey.parse(self._hotkeys[name]) for name in HOTKEY_KEYS}  # type: ignore[misc]
             parsed[key] = hotkey
         return parsed
 
@@ -77,7 +82,7 @@ class HotkeyManager:
         return (combo or "").strip().lower().replace(" ", "")
 
     def validate(self, pending: dict[str, str]) -> str | None:
-        """校验待保存的三组组合。
+        """校验待保存的各组组合。
 
         返回 ``None`` 表示通过；否则返回状态栏错误文案。
 
@@ -87,11 +92,14 @@ class HotkeyManager:
         2. 文案里的 ``{name}`` 用的是**内部键名**（``translate`` / ``snip`` / ``save_last``），
            而不是界面标签 —— 原版 ``main.py:647`` 直接把 ``k`` 拼进字符串，看着像笔误，
            但属于对外文案，行为等价要求原样保留。
+
+        新增功能加入第 4 组（``input``）后，判重的数量口径变成 :data:`HOTKEY_KEYS` 的长度
+        （见 KNOWN_ISSUES.md 偏差 D15），文案同步为"4 组"。
         """
         for key in HOTKEY_KEYS:
             value = pending.get(key, "")
             if Hotkey.parse(value) is None:
                 return WindowText.HOTKEY_ERROR_FORMAT.format(name=key, value=value)
-        if len({pending.get(key, "") for key in HOTKEY_KEYS}) < 3:
+        if len({pending.get(key, "") for key in HOTKEY_KEYS}) < len(HOTKEY_KEYS):
             return WindowText.HOTKEY_DUPLICATE
         return None

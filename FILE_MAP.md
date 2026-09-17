@@ -10,14 +10,14 @@
 | 层级 | 目录 | 文件 | 行数 | 职责 | 允许依赖 |
 |---|---|---|---|---|---|
 | L0 配置 | `src/snaptranslate/config/` | 5 | 116 | 路径解析、主题色、应用元信息、代理模式与预设 | 仅标准库 |
-| L1 领域 | `src/snaptranslate/domain/` | 31 | 878 | 模型、领域服务、17 个端口 Protocol、错误 | 标准库 + domain |
-| L2 基础设施 | `src/snaptranslate/infrastructure/` | 33 | 1529 | 2 条翻译线路（clients5 + MyMemory）与竞速、代理/HTTP 出口、Tesseract OCR、SAPI 朗读、JSON 持久化、Win32 输入、DeepSeek | + config |
-| L3 应用 | `src/snaptranslate/application/` | 14 | 784 | 8 个用例 + 依赖包 + 进度/结果 DTO | + domain、config |
-| L4 表示 | `src/snaptranslate/presentation/` | 32 | 3954 | 文案总表 + Tk（`tk/` 24 文件）+ Streamlit（`web/` 6 文件） | + application |
-| L5 组装 | `src/snaptranslate/bootstrap/` | 5 | 291 | 容器（唯一装配点）、装配函数、CLI/Streamlit 进程入口 | 全部 |
-| — | 主包合计 | **120** | **7552** | | |
+| L1 领域 | `src/snaptranslate/domain/` | 31 | 933 | 模型、领域服务、17 个端口 Protocol、错误 | 标准库 + domain |
+| L2 基础设施 | `src/snaptranslate/infrastructure/` | 33 | 1578 | 2 条翻译线路（clients5 + MyMemory）与竞速、代理/HTTP 出口、Tesseract OCR、SAPI 朗读、JSON 持久化、Win32 输入、DeepSeek | + config |
+| L3 应用 | `src/snaptranslate/application/` | 15 | 887 | 9 个用例（含中译英输入框）+ 依赖包 + 进度/结果 DTO | + domain、config |
+| L4 表示 | `src/snaptranslate/presentation/` | 34 | 4364 | 文案总表 + Tk（`tk/` 26 文件）+ Streamlit（`web/` 6 文件） | + application |
+| L5 组装 | `src/snaptranslate/bootstrap/` | 5 | 296 | 容器（唯一装配点）、装配函数、CLI/Streamlit 进程入口 | 全部 |
+| — | 主包合计 | **123** | **8174** | | |
 
-外围：`entrypoints/`（4 个兼容入口）、`scripts/`（6 个门禁 + 3 个诊断脚本）、`tests/`（18 个文件 / 215 项测试）。
+外围：`entrypoints/`（4 个兼容入口）、`scripts/`（6 个门禁 + 3 个诊断脚本）、`tests/`（18 个文件 / 232 项测试）。
 
 粒度：单文件 60–300 行、单文件单职责。**唯一例外**是 `presentation/texts.py`（321 行，全部界面文案的唯一出口），已在 `ARCHITECTURE.md §3` 登记。
 
@@ -131,7 +131,10 @@
 | `application/progress.py`、`application/dto.py` | 流程阶段枚举 + 进度回调 + 用例结果对象 |
 | `application/vocabulary_target.py` | 当前词表绑定（支持复习端切换词表文件） |
 | `application/backup.py` | 启动备份用例 |
-| `domain/models/translation.py` | `TranslationResult`：`display_text`（日志用，带引擎标签）与 `card_text`（卡片用，干净译文），见 KNOWN_ISSUES F8 |
+| `domain/models/translation.py` | `TranslationResult`：`display_text`（日志用，带引擎标签）与 `card_text`（卡片用，干净译文），见 KNOWN_ISSUES F8；**新增** `Direction` 值对象（自动→中 / 中→英） |
+| `application/translate_input.py` | **新增功能**：`TranslateInputUseCase`（用户手敲的中文 → 英文） |
+| `presentation/tk/input_box.py` | **新增功能**：`OverlayInputBox`（浮层输入/输出框：回车翻译、点框内复用、框外关闭） |
+| `presentation/tk/overlay_geometry.py` | 浮层共用几何：`place_near`（+16 偏移并夹在屏内）与 `is_inside`（卡片/输入框共用） |
 | `presentation/texts.py` | 全部界面文案的唯一出口 |
 | `presentation/tk/translate_sink.py`、`app_events.py` | 线程安全的结果出口 + 热键→线程→用例编排（含"触发瞬间取锚点"） |
 | `infrastructure/input/win32_pointer.py`、`win32_input_watcher.py` | 鼠标位置（`GetCursorPos`）与"任意键/鼠标键按下"监听（浮层锚点与关闭，见 KNOWN_ISSUES #23/#24） |
@@ -139,4 +142,4 @@
 | `presentation/tk/translate_ui.py` | 面板与窗口壳的 Protocol 契约 |
 | `bootstrap/container.py` / `wiring.py` / `cli.py` / `streamlit_entry.py` | 组合根与四类进程入口 |
 | `scripts/*.py`（9 个） | 分层校验 / 对拍 / 冒烟 / Tk 冒烟 / Web 结构对拍 / 一键全跑 + 取词诊断 / 修饰键诊断 / 复习推进诊断 |
-| `tests/*`（18 个） | 215 项测试（含分层约束、代理、线路裁剪、复习卡片控制器与表示层纯逻辑） |
+| `tests/*`（18 个） | 232 项测试（含分层约束、代理、线路裁剪、复习卡片控制器、浮层几何与表示层纯逻辑） |

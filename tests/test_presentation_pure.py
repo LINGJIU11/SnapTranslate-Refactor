@@ -11,7 +11,7 @@ from snaptranslate.application.dto import CollectKind, DeleteKind, ErrorKind
 from snaptranslate.application.progress import Stage
 from snaptranslate.application.review import ReviewUseCase
 from snaptranslate.application.vocabulary_target import VocabularyTarget
-from snaptranslate.domain.models.hotkey import DEFAULT_HOTKEYS
+from snaptranslate.domain.models.hotkey import DEFAULT_HOTKEYS, feature_hotkeys
 from snaptranslate.domain.models.review import Grade, SortMode
 from snaptranslate.domain.models.vocab_entry import Vocabulary
 from snaptranslate.domain.services.review_session import ReviewSession
@@ -25,6 +25,7 @@ from snaptranslate.presentation.texts import (
 )
 from snaptranslate.presentation.tk.card_controller import CardController
 from snaptranslate.presentation.tk.hotkey_controls import HotkeyManager
+from snaptranslate.presentation.tk.overlay_geometry import MARGIN, is_inside, place_near
 from snaptranslate.presentation.tk.translate_transcript import RecentList
 
 
@@ -87,10 +88,11 @@ class CollectTextTests(unittest.TestCase):
 
 class WindowTextTests(unittest.TestCase):
     def test_status_and_hint_texts(self) -> None:
-        hotkeys = dict(DEFAULT_HOTKEYS)
+        # 新增功能加了第 4 组热键（中译英输入框，偏差 D15），文案随之延长
+        hotkeys = feature_hotkeys()
         self.assertEqual(
             WindowText.status_enabled(hotkeys),
-            "已开启 — CTRL+L 划词翻译，TAB+Q 截图 OCR，TAB+E 收录最近一条",
+            "已开启 — CTRL+L 划词翻译，TAB+Q 截图 OCR，TAB+E 收录最近一条，CTRL+I 中译英输入框",
         )
         self.assertEqual(
             WindowText.status_disabled(hotkeys),
@@ -98,7 +100,7 @@ class WindowTextTests(unittest.TestCase):
         )
         self.assertEqual(
             WindowText.hotkey_hint(hotkeys),
-            "划词翻译：CTRL+L  |  截图 OCR：TAB+Q  |  收录：TAB+E",
+            "划词翻译：CTRL+L  |  截图 OCR：TAB+Q  |  收录：TAB+E  |  中译英：CTRL+I",
         )
 
     def test_no_selection_hint(self) -> None:
@@ -109,7 +111,8 @@ class WindowTextTests(unittest.TestCase):
             WindowText.HOTKEY_ERROR_FORMAT.format(name="snip", value="bad"),
             "快捷键格式错误：snip=bad（示例：ctrl+l / tab+q）",
         )
-        self.assertEqual(WindowText.HOTKEY_DUPLICATE, "快捷键不能重复，请设置 3 组不同组合")
+        # 原版是"3 组"；新增第 4 组热键后改为"4 组"（偏差 D15）
+        self.assertEqual(WindowText.HOTKEY_DUPLICATE, "快捷键不能重复，请设置 4 组不同组合")
         self.assertEqual(WindowText.FLOATING_COLLECT_BUTTON, "收录生词本")
 
 
@@ -204,9 +207,11 @@ class HotkeyManagerTests(unittest.TestCase):
     def test_label_and_texts(self) -> None:
         manager = HotkeyManager()
         self.assertEqual(manager.label("translate"), "CTRL+L")
-        self.assertEqual(manager.hint(), WindowText.hotkey_hint(DEFAULT_HOTKEYS))
-        self.assertEqual(manager.status_enabled(), WindowText.status_enabled(DEFAULT_HOTKEYS))
-        self.assertEqual(manager.status_disabled(), WindowText.status_disabled(DEFAULT_HOTKEYS))
+        # 新增功能：第 4 组热键（中译英输入框），默认 ctrl+i
+        self.assertEqual(manager.label("input"), "CTRL+I")
+        self.assertEqual(manager.hint(), WindowText.hotkey_hint(feature_hotkeys()))
+        self.assertEqual(manager.status_enabled(), WindowText.status_enabled(feature_hotkeys()))
+        self.assertEqual(manager.status_disabled(), WindowText.status_disabled(feature_hotkeys()))
 
     def test_label_placeholder_for_unknown_action(self) -> None:
         self.assertEqual(HotkeyManager().label("nope"), "（未设置）")
@@ -215,18 +220,34 @@ class HotkeyManagerTests(unittest.TestCase):
         self.assertEqual(HotkeyManager.normalize("  CTRL + L "), "ctrl+l")
 
     def test_validate_reports_format_error_first(self) -> None:
-        message = HotkeyManager().validate({"translate": "ctrl+l", "snip": "bad", "save_last": "tab+e"})
-        self.assertEqual(message, "快捷键格式错误：snip=bad（示例：ctrl+l / tab+q）")
+        pending = {"translate": "ctrl+l", "snip": "bad", "save_last": "tab+e", "input": "ctrl+i"}
+        self.assertEqual(
+            HotkeyManager().validate(pending),
+            "快捷键格式错误：snip=bad（示例：ctrl+l / tab+q）",
+        )
 
     def test_validate_reports_duplicate(self) -> None:
-        message = HotkeyManager().validate({"translate": "ctrl+l", "snip": "ctrl+l", "save_last": "tab+e"})
-        self.assertEqual(message, WindowText.HOTKEY_DUPLICATE)
+        pending = {"translate": "ctrl+l", "snip": "ctrl+l", "save_last": "tab+e", "input": "ctrl+i"}
+        self.assertEqual(HotkeyManager().validate(pending), WindowText.HOTKEY_DUPLICATE)
+
+    def test_validate_requires_all_four_bindings(self) -> None:
+        """第 4 组缺失（老界面上没有这个输入框）也算格式错误，与原版"必须齐全"一致。"""
+        pending = {"translate": "ctrl+l", "snip": "tab+q", "save_last": "tab+e"}
+        self.assertEqual(
+            HotkeyManager().validate(pending),
+            "快捷键格式错误：input=（示例：ctrl+l / tab+q）",
+        )
 
     def test_validate_passes(self) -> None:
-        self.assertIsNone(HotkeyManager().validate(dict(DEFAULT_HOTKEYS)))
+        self.assertIsNone(HotkeyManager().validate(feature_hotkeys()))
+
+    def test_bindings_include_input(self) -> None:
+        bindings = HotkeyManager(feature_hotkeys()).bindings()
+        self.assertEqual(sorted(bindings), ["input", "save_last", "snip", "translate"])
+        self.assertEqual(bindings["input"].label, "CTRL+I")
 
     def test_bindings_parse(self) -> None:
-        bindings = HotkeyManager(dict(DEFAULT_HOTKEYS)).bindings()
+        bindings = HotkeyManager(feature_hotkeys()).bindings()
         self.assertEqual(bindings["translate"].label, "CTRL+L")
         self.assertEqual(bindings["snip"].modifier, "tab")
         self.assertEqual(bindings["save_last"].key, "e")
@@ -393,6 +414,35 @@ class CardControllerGradeTests(unittest.TestCase):
         self.assertEqual(ref.session.position, 0)
         self.assertEqual(form.cleared, 1)
         self.assertEqual((logged, failed), ([], []))
+
+
+# —————————————————————— 浮层几何（卡片与输入框共用）——————————————————————
+
+
+class OverlayGeometryTests(unittest.TestCase):
+    """``overlay_geometry`` 是悬浮卡片与中译英输入框共用的摆放/命中逻辑。"""
+
+    def test_is_inside_uses_open_right_bottom(self) -> None:
+        bounds = (100, 100, 200, 150)
+        self.assertTrue(is_inside(bounds, (100, 100)))
+        self.assertTrue(is_inside(bounds, (199, 149)))
+        self.assertFalse(is_inside(bounds, (200, 149)))
+        self.assertFalse(is_inside(bounds, (199, 150)))
+        self.assertFalse(is_inside(bounds, (99, 120)))
+
+    def test_place_near_offsets_and_clamps(self) -> None:
+        _x, _y, bounds = place_near((100, 100), (500, 140), (1920, 1080))
+        self.assertEqual(bounds, (116, 116, 616, 256))
+
+    def test_place_near_clamps_at_screen_edges(self) -> None:
+        # 靠近右下角：必须整体留在屏内（留 MARGIN 边距）
+        x, y, bounds = place_near((1900, 1070), (500, 140), (1920, 1080))
+        self.assertEqual((x, y), (1920 - 500 - MARGIN, 1080 - 140 - MARGIN))
+        self.assertEqual(bounds[2], 1920 - MARGIN)
+        self.assertEqual(bounds[3], 1080 - MARGIN)
+        # 靠近左上角：不小于 MARGIN
+        x, y, _bounds = place_near((-50, -50), (500, 140), (1920, 1080))
+        self.assertEqual((x, y), (MARGIN, MARGIN))
 
 
 if __name__ == "__main__":

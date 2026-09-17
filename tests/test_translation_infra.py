@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import time
 import unittest
 
 import requests
 
 from snaptranslate.domain.errors import MissingApiKeyError
-from snaptranslate.domain.models.translation import NO_TRANSLATION_RESULT, TranslationResult
+from snaptranslate.domain.models.translation import (
+    AUTO_TO_CHINESE,
+    CHINESE_TO_ENGLISH,
+    NO_TRANSLATION_RESULT,
+    Direction,
+    TranslationResult,
+)
 from snaptranslate.infrastructure.llm.deepseek import (
     build_user_prompt,
     is_insufficient_balance_error,
@@ -41,14 +48,26 @@ class _StubResponse:
 class _FakeTranslator:
     """返回固定结果或抛固定异常的假引擎。"""
 
-    def __init__(self, name: str, *, text: str | None = None, error: BaseException | None = None):
+    def __init__(
+        self,
+        name: str,
+        *,
+        text: str | None = None,
+        error: BaseException | None = None,
+        delay: float = 0.0,
+    ):
         self.name = name
         self._text = text
         self._error = error
+        self._delay = delay
         self.calls = 0
+        self.directions: list[Direction] = []
 
-    def translate(self, text: str) -> TranslationResult:
+    def translate(self, text: str, direction: Direction = AUTO_TO_CHINESE) -> TranslationResult:
         self.calls += 1
+        self.directions.append(direction)
+        if self._delay:
+            time.sleep(self._delay)
         if self._error is not None:
             raise self._error
         return TranslationResult(self._text or "", self.name)
@@ -85,6 +104,16 @@ class CacheTests(unittest.TestCase):
         self.assertEqual(cache.get("google", "a"), "甲")
         self.assertEqual(cache.get("google", "c"), "丙")
 
+    def test_direction_variant_isolates_cache_entries(self) -> None:
+        """同一个句子"中→英"与"自动→中"必须各存一份，不能互相串味。"""
+        cache = TranslationCache()
+        cache.put("google_c5", "书", "book", CHINESE_TO_ENGLISH.variant)
+        self.assertEqual(cache.get("google_c5", "书", CHINESE_TO_ENGLISH.variant), "book")
+        self.assertIsNone(cache.get("google_c5", "书"))  # 默认方向（自动→中文）没有这条
+        cache.put("google_c5", "书", "书（中文结果）")
+        self.assertEqual(cache.get("google_c5", "书"), "书（中文结果）")
+        self.assertEqual(len(cache), 2)
+
 
 class PayloadParsingTests(unittest.TestCase):
     def test_clients5_variants(self) -> None:
@@ -97,6 +126,13 @@ class PayloadParsingTests(unittest.TestCase):
     def test_mymemory_langpairs(self) -> None:
         self.assertEqual(langpairs_for("hello"), ("en|zh-CN", "Autodetect|zh-CN"))
         self.assertEqual(langpairs_for("你好"), ("Autodetect|zh-CN", "en|zh-CN"))
+
+    def test_mymemory_langpairs_for_explicit_direction(self) -> None:
+        """新增功能：显式方向（中译英）时不再按内容猜，直接用 ``zh-CN|en``。"""
+        self.assertEqual(langpairs_for("你好", CHINESE_TO_ENGLISH), ("zh-CN|en",))
+        self.assertEqual(langpairs_for("hello", CHINESE_TO_ENGLISH), ("zh-CN|en",))
+        # 默认方向必须保持原版行为（含拉丁字母时先 en|zh-CN）
+        self.assertEqual(langpairs_for("hello", AUTO_TO_CHINESE), ("en|zh-CN", "Autodetect|zh-CN"))
 
     def test_mymemory_quota_detection(self) -> None:
         with self.assertRaises(RuntimeError):
@@ -186,6 +222,43 @@ class RacingTranslatorTests(unittest.TestCase):
         """被裁掉的 gtx 与两条 Lingva 不能再出现在竞速里（F7）。"""
         racing = build_racing_translator(TranslationCache())
         self.assertEqual(racing.line_names, ("Google（clients5）", "MyMemory"))
+
+    def test_direction_is_passed_to_every_line(self) -> None:
+        """新增功能：方向必须透传到每条线路（中译英才会真的走 zh-CN → en）。
+
+        clients5 人为放慢，让 MyMemory 先返回：这样两条线路的调用都真实发生过，
+        断言不依赖"哪条先跑完"。
+        """
+        c5 = _FakeTranslator("c5", text="Hello", delay=0.05)
+        mymemory = _FakeTranslator("mm", text="Hi")
+        racing = self._racing(TranslationCache(), c5, mymemory)
+
+        result = racing.translate("你好", CHINESE_TO_ENGLISH)
+
+        self.assertEqual(result.text, "Hi")
+        self.assertEqual(mymemory.directions, [CHINESE_TO_ENGLISH])
+        self.assertEqual(c5.directions, [CHINESE_TO_ENGLISH])
+
+    def test_default_direction_keeps_original_behaviour(self) -> None:
+        c5 = _FakeTranslator("c5", text="译文")
+        racing = self._racing(TranslationCache(), c5, _FakeTranslator("mm", error=RuntimeError("慢")))
+
+        racing.translate("hello")
+
+        self.assertEqual(c5.directions, [AUTO_TO_CHINESE])
+
+    def test_direction_variant_short_circuits_cache(self) -> None:
+        """缓存命中要认方向：中→英的缓存不能被"自动→中"复用。"""
+        cache = TranslationCache()
+        cache.put("google_c5", "书", "book", CHINESE_TO_ENGLISH.variant)
+        c5 = _FakeTranslator("c5", text="不应被调用")
+        racing = self._racing(cache, c5, _FakeTranslator("mm", error=RuntimeError("慢")))
+
+        result = racing.translate("书", CHINESE_TO_ENGLISH)
+
+        self.assertEqual(result.text, "book")
+        self.assertEqual(c5.calls, 0)
+        self.assertIsNone(result.engine_label)  # 命中缓存不带标签（原版语义）
         self.assertFalse(hasattr(racing, "_lingvas"))
         self.assertFalse(hasattr(racing, "_gtx"))
 

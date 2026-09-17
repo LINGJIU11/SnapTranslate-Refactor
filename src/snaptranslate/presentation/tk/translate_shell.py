@@ -20,6 +20,7 @@ from snaptranslate.config.theme import (
     UI_TEXT,
     UI_TEXT_MUTED,
 )
+from snaptranslate.domain.models.hotkey import DEFAULT_INPUT_HOTKEY
 from snaptranslate.presentation.texts import WindowText
 from snaptranslate.presentation.tk.translate_panel import build_control_panel
 from snaptranslate.presentation.tk.translate_ui import ShellHost
@@ -68,6 +69,8 @@ def _create_variables(host: ShellHost, root: tk.Tk) -> None:
     host.hotkey_translate_var = tk.StringVar(master=root, value=host.hotkeys["translate"])
     host.hotkey_snip_var = tk.StringVar(master=root, value=host.hotkeys["snip"])
     host.hotkey_save_var = tk.StringVar(master=root, value=host.hotkeys["save_last"])
+    #: 新增功能（偏差 D15）；老设置文件没有 input 时，``load_hotkeys`` 已补上默认值
+    host.hotkey_input_var = tk.StringVar(master=root, value=host.hotkeys.get("input", DEFAULT_INPUT_HOTKEY))
     host.hotkey_hint_var = tk.StringVar(master=root, value="")
     host.recent_vars = [
         tk.StringVar(master=root, value=WindowText.EMPTY_RECENT) for _ in range(RECENT_TRANSLATION_ROWS)

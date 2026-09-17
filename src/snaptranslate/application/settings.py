@@ -9,7 +9,10 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from snaptranslate.config.proxy import DEFAULT_MODE, MODES, normalize_proxy_url
-from snaptranslate.domain.models.hotkey import DEFAULT_HOTKEYS, Hotkey, normalize
+from snaptranslate.domain.models.hotkey import Hotkey, feature_hotkeys, normalize
+
+#: 当前程序完整的默认热键（原版三组 + 新增的输入框一组）；老设置文件缺 ``input`` 时用它补齐
+FEATURE_HOTKEYS = feature_hotkeys()
 from snaptranslate.domain.ports.settings_repository import SettingsRepository
 
 DEFAULT_TTS_VOLUME = 100
@@ -20,7 +23,7 @@ class TranslateSettingsUseCase:
 
     def __init__(self, repository: SettingsRepository, defaults: Mapping[str, str] | None = None) -> None:
         self._repository = repository
-        self._defaults = dict(defaults or DEFAULT_HOTKEYS)
+        self._defaults = dict(defaults or FEATURE_HOTKEYS)
 
     def load_hotkeys(self) -> dict[str, str]:
         """原 ``_load_hotkeys``：非法或缺失的组合回退默认值。"""

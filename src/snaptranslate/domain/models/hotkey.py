@@ -9,12 +9,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-#: 原版 ``main.py:91-95``
+#: 原版 ``main.py:91-95``：**对拍基线，不要再往里加东西**
+#: （新增功能的热键写在 :data:`DEFAULT_INPUT_HOTKEY` 里，由 :func:`feature_hotkeys` 合并）
 DEFAULT_HOTKEYS: dict[str, str] = {
     "translate": "ctrl+l",
     "snip": "tab+q",
     "save_last": "tab+e",
 }
+
+#: **新增功能**：中译英输入框的热键键名与默认值（原版只有上面三组）
+INPUT_HOTKEY_KEY = "input"
+DEFAULT_INPUT_HOTKEY = "ctrl+i"
+
+#: 界面上真正会读写的全部热键：原版三组 + 新增的输入框一组
+ALL_HOTKEY_KEYS: tuple[str, ...] = ("translate", "snip", "save_last", INPUT_HOTKEY_KEY)
+
+
+def feature_hotkeys() -> dict[str, str]:
+    """包含新增功能的默认热键（**每次返回新 dict**，调用方可安全修改）。
+
+    与 :data:`DEFAULT_HOTKEYS` 的关系：后者是原版基线，前者是当前程序完整的默认值。
+    设置文件里没有 ``input`` 字段（老版本写下的）时，就会补上这里的默认值，
+    因此升级不会让老用户的其它热键被重置。
+    """
+    return {**DEFAULT_HOTKEYS, INPUT_HOTKEY_KEY: DEFAULT_INPUT_HOTKEY}
 
 VALID_MODIFIERS: tuple[str, ...] = ("ctrl", "tab", "shift", "alt")
 _NAMED_KEYS: tuple[str, ...] = ("TAB", "SPACE")

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 
-from snaptranslate.domain.models.translation import TranslationResult
+from snaptranslate.domain.models.translation import AUTO_TO_CHINESE, Direction, TranslationResult
 from snaptranslate.domain.ports.translator import Translator
 from snaptranslate.infrastructure.translation.cache import TranslationCache
 from snaptranslate.infrastructure.translation.mymemory import TranslationQuotaError
@@ -27,7 +27,12 @@ from snaptranslate.infrastructure.translation.policy import (
 
 
 class RacingTranslator:
-    """多线路并发竞速翻译器（当前 2 条线路）。"""
+    """多线路并发竞速翻译器（当前 2 条线路）。
+
+    ``translate(text, direction)`` 把方向原样透传给每条线路，并把它纳入缓存键——
+    同一个句子"中→英"与"自动→中"的结果不会互相串味（见
+    :class:`~snaptranslate.domain.models.translation.Direction`）。
+    """
 
     name = "racing"
 
@@ -49,17 +54,25 @@ class RacingTranslator:
         """当前参与竞速的线路名（日志/自检用）。"""
         return (ENGINE_LABEL_GOOGLE_CLIENTS5, ENGINE_LABEL_MYMEMORY)
 
-    def translate(self, text: str) -> TranslationResult:
+    def translate(
+        self,
+        text: str,
+        direction: Direction = AUTO_TO_CHINESE,
+    ) -> TranslationResult:
         for key in CACHE_ENGINE_KEYS:
-            hit = self._cache.get(key, text)
+            hit = self._cache.get(key, text, direction.variant)
             if hit is not None:
                 return TranslationResult(hit)
 
         executor = ThreadPoolExecutor(max_workers=self._max_workers)
         future_to_label: dict[Future, str] = {}
         try:
-            future_to_label[executor.submit(self._clients5.translate, text)] = ENGINE_LABEL_GOOGLE_CLIENTS5
-            future_to_label[executor.submit(self._mymemory.translate, text)] = ENGINE_LABEL_MYMEMORY
+            future_to_label[executor.submit(self._clients5.translate, text, direction)] = (
+                ENGINE_LABEL_GOOGLE_CLIENTS5
+            )
+            future_to_label[executor.submit(self._mymemory.translate, text, direction)] = (
+                ENGINE_LABEL_MYMEMORY
+            )
 
             errors: list[BaseException] = []
             for future in as_completed(future_to_label):

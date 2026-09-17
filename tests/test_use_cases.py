@@ -19,6 +19,7 @@ from snaptranslate.application.review import (
     READ_MODE_WORD_EXAMPLE,
     ReviewUseCase,
 )
+from snaptranslate.application.translate_input import TranslateInputUseCase
 from snaptranslate.application.translate_screenshot import TranslateScreenshotUseCase
 from snaptranslate.application.translate_selection import TranslateSelectionUseCase
 from snaptranslate.application.translate_text import TranslateTextUseCase
@@ -33,12 +34,18 @@ from snaptranslate.domain.errors import (
     OcrError,
     OcrUnavailableError,
     SnapTranslateError,
+    TranslationError,
     VocabularyFileMissingError,
     VocabularyIoError,
 )
 from snaptranslate.domain.models.geometry import BBox
 from snaptranslate.domain.models.selection import SelectionCapture
-from snaptranslate.domain.models.translation import TranslationResult
+from snaptranslate.domain.models.translation import (
+    AUTO_TO_CHINESE,
+    CHINESE_TO_ENGLISH,
+    Direction,
+    TranslationResult,
+)
 from snaptranslate.domain.models.vocab_entry import Vocabulary
 from snaptranslate.domain.ports.backup_writer import BackupResult
 from snaptranslate.domain.ports.ocr import OcrStage
@@ -107,9 +114,11 @@ class FakeTranslator:
         self._result = result or TranslationResult("译文")
         self._error = error
         self.seen: list[str] = []
+        self.directions: list[Direction] = []
 
-    def translate(self, text: str) -> TranslationResult:
+    def translate(self, text: str, direction: Direction = AUTO_TO_CHINESE) -> TranslationResult:
         self.seen.append(text)
+        self.directions.append(direction)
         if self._error is not None:
             raise self._error
         return self._result
@@ -649,6 +658,71 @@ class VocabularyAdminUseCaseTests(unittest.TestCase):
         result = self._use_case(FakeRepository([]), backup).cleanup_backups("backups")
         self.assertTrue(backup.cleaned)
         self.assertEqual(result, (2, "backups/keep.json"))
+
+
+# —————————————————————— 中译英输入框用例（新增功能）——————————————————————
+
+
+class TranslateInputUseCaseTests(unittest.TestCase):
+    """``TranslateInputUseCase``：用户手敲的中文 → 英文。"""
+
+    def _use_case(self, translator, *, source="google", formatter=None, max_length=1000):
+        return TranslateInputUseCase(
+            lambda _source: translator,
+            lambda: source,
+            formatter or (lambda exc: f"格式化：{type(exc).__name__}"),
+            max_length=max_length,
+        )
+
+    def test_translates_with_chinese_to_english_direction(self) -> None:
+        translator = FakeTranslator(TranslationResult("Hello world"))
+        outcome = self._use_case(translator).execute("  你好，世界  ")
+        self.assertTrue(outcome.ok)
+        self.assertIsNotNone(outcome.result)
+        self.assertEqual(outcome.result.text, "Hello world")
+        # 关键：方向必须是"中文 → 英文"，而不是原版的"自动 → 中文"
+        self.assertEqual(translator.directions, [CHINESE_TO_ENGLISH])
+        # clean_text 已经折行/去空白
+        self.assertEqual(translator.seen, ["你好，世界"])
+
+    def test_empty_input_is_no_text(self) -> None:
+        translator = FakeTranslator()
+        outcome = self._use_case(translator).execute("   \n  ")
+        self.assertEqual(outcome.kind, OutcomeKind.NO_TEXT)
+        self.assertEqual(translator.seen, [])
+
+    def test_long_input_is_truncated_and_flagged(self) -> None:
+        translator = FakeTranslator()
+        outcome = self._use_case(translator, max_length=5).execute("一二三四五六七八")
+        self.assertTrue(outcome.truncated)
+        self.assertEqual(outcome.source_text, "一二三四五...")
+        self.assertEqual(translator.seen, ["一二三四五..."])
+
+    def test_translation_error_is_rendered(self) -> None:
+        translator = FakeTranslator(error=TranslationError("网络炸了"))
+        outcome = self._use_case(translator).execute("你好")
+        self.assertEqual(outcome.kind, OutcomeKind.ERROR)
+        self.assertEqual(outcome.error_kind, ErrorKind.TRANSLATE)
+        self.assertEqual(outcome.error_message, "网络炸了")
+
+    def test_unexpected_error_uses_formatter(self) -> None:
+        translator = FakeTranslator(error=RuntimeError("boom"))
+        outcome = self._use_case(translator).execute("你好")
+        self.assertEqual(outcome.kind, OutcomeKind.ERROR)
+        self.assertEqual(outcome.error_message, "格式化：RuntimeError")
+
+    def test_source_provider_failure_falls_back_to_racing(self) -> None:
+        translator = FakeTranslator()
+        seen_sources: list[str] = []
+
+        use_case = TranslateInputUseCase(
+            lambda source: (seen_sources.append(source), translator)[1],
+            lambda: (_ for _ in ()).throw(RuntimeError("Tk 已销毁")),
+            lambda exc: "x",
+        )
+        outcome = use_case.execute("你好")
+        self.assertTrue(outcome.ok)
+        self.assertEqual(seen_sources, ["google"])
 
 
 if __name__ == "__main__":

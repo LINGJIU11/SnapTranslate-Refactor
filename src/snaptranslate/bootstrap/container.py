@@ -18,6 +18,7 @@ from snaptranslate.application.backup import BackupVocabularyUseCase
 from snaptranslate.application.generate_examples import GenerateExamplesUseCase
 from snaptranslate.application.review import DESKTOP_MISSING_MESSAGE, WEB_MISSING_MESSAGE, ReviewUseCase
 from snaptranslate.application.settings import ReviewSettingsUseCase, TranslateSettingsUseCase
+from snaptranslate.application.translate_input import TranslateInputUseCase
 from snaptranslate.application.translate_screenshot import TranslateScreenshotUseCase
 from snaptranslate.application.translate_selection import TranslateSelectionUseCase
 from snaptranslate.application.translate_text import TranslateTextUseCase
@@ -166,6 +167,10 @@ class Container:
             tts_volume_provider,
         )
 
+    def translate_input_use_case(self, source_provider) -> TranslateInputUseCase:
+        """新增功能：中译英输入框（复用同一个 ``self.translator`` 工厂与错误格式化）。"""
+        return TranslateInputUseCase(self.translator, source_provider, self._error_formatter)
+
     def translate_selection_use_case(self, source_provider, tts_volume_provider) -> TranslateSelectionUseCase:
         return TranslateSelectionUseCase(
             self._selection,
@@ -205,6 +210,7 @@ class Container:
             translate_text_factory=self.translate_text_use_case,
             selection_usecase_factory=self.translate_selection_use_case,
             screenshot_usecase_factory=self.translate_screenshot_use_case,
+            input_usecase_factory=self.translate_input_use_case,
             hotkey_listener=self.hotkey_listener(),
             window_activator=self._window_activator,
             pointer=self._pointer,

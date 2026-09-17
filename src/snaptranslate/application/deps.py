@@ -12,6 +12,7 @@ from typing import Callable
 from snaptranslate.application.generate_examples import GenerateExamplesUseCase
 from snaptranslate.application.review import ReviewUseCase
 from snaptranslate.application.settings import ReviewSettingsUseCase, TranslateSettingsUseCase
+from snaptranslate.application.translate_input import TranslateInputUseCase
 from snaptranslate.application.translate_screenshot import TranslateScreenshotUseCase
 from snaptranslate.application.translate_selection import TranslateSelectionUseCase
 from snaptranslate.application.translate_text import TranslateTextUseCase
@@ -40,6 +41,8 @@ LastTranslationProvider = Callable[[], tuple[str, str]]
 TranslateTextFactory = Callable[[SourceProvider, VolumeProvider], TranslateTextUseCase]
 SelectionUseCaseFactory = Callable[[SourceProvider, VolumeProvider], TranslateSelectionUseCase]
 ScreenshotUseCaseFactory = Callable[[SourceProvider, VolumeProvider], TranslateScreenshotUseCase]
+#: 新增功能：中译英输入框（只需要"当前翻译源"，与朗读音量无关）
+InputUseCaseFactory = Callable[[SourceProvider], TranslateInputUseCase]
 RecallLastFactory = Callable[[LastTranslationProvider], RecallLastTranslationUseCase]
 #: 构造例句生成器（可指定 API Key 文件路径；无 key 时抛 MissingApiKeyError，由表示层弹窗/警告）
 ExampleGeneratorFactory = Callable[[str | None], ExampleGenerator]
@@ -55,6 +58,8 @@ class TranslateAppDeps:
     translate_text_factory: TranslateTextFactory
     selection_usecase_factory: SelectionUseCaseFactory
     screenshot_usecase_factory: ScreenshotUseCaseFactory
+    #: 新增功能：中译英输入框用例
+    input_usecase_factory: InputUseCaseFactory
     hotkey_listener: HotkeyListener
     window_activator: WindowActivator
     #: 取鼠标位置（悬浮卡片以"热键按下瞬间"的位置为锚点，见 KNOWN_ISSUES.md #23）

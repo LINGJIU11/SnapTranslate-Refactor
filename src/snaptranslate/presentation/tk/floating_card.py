@@ -20,6 +20,8 @@ from snaptranslate.config.theme import UI_FLOAT_BG
 from snaptranslate.domain.ports.input_watcher import InputWatcher
 from snaptranslate.domain.ports.pointer import Pointer
 from snaptranslate.presentation.texts import WindowText
+from snaptranslate.presentation.tk.overlay_geometry import Bounds, place_near
+from snaptranslate.presentation.tk.overlay_geometry import is_inside  # noqa: F401  (对外沿用旧导入路径)
 from snaptranslate.presentation.tk.ui_kit import FLOAT_BORDER_COLOR, floating_label, small_button
 
 #: 原 ``main.py:684`` / ``main.py:729``
@@ -28,18 +30,9 @@ POPUP_WIDTH = 500
 POPUP_HEIGHT = 140
 #: 原 ``main.py:699``
 WRAP_LENGTH = 460
-#: 原 ``main.py:733``：位置 = 锚点 +16，并夹在屏内
+#: 原 ``main.py:733``：位置 = 锚点 +16，并夹在屏内（几何计算见 ``overlay_geometry``）
 OFFSET = 16
 MARGIN = 10
-
-Bounds = tuple[int, int, int, int]  # (left, top, right, bottom)
-
-
-def is_inside(bounds: Bounds, point: tuple[int, int]) -> bool:
-    """鼠标是否落在卡片矩形内（纯函数，便于单测）。"""
-    left, top, right, bottom = bounds
-    x, y = point
-    return left <= x < right and top <= y < bottom
 
 
 class FloatingCard:
@@ -142,12 +135,14 @@ class FloatingCard:
 
     def _place(self, point: tuple[int, int]) -> tuple[int, int]:
         """按锚点算出卡片左上角：``+16`` 偏移并夹在屏内（原 ``main.py:733-734``）。"""
-        cursor_x, cursor_y = point
-        screen_w = self._root.winfo_screenwidth()
-        screen_h = self._root.winfo_screenheight()
-        x = min(max(MARGIN, cursor_x + OFFSET), max(MARGIN, screen_w - POPUP_WIDTH - MARGIN))
-        y = min(max(MARGIN, cursor_y + OFFSET), max(MARGIN, screen_h - POPUP_HEIGHT - MARGIN))
-        self._bounds = (x, y, x + POPUP_WIDTH, y + POPUP_HEIGHT)
+        x, y, bounds = place_near(
+            point,
+            (POPUP_WIDTH, POPUP_HEIGHT),
+            (self._root.winfo_screenwidth(), self._root.winfo_screenheight()),
+            offset=OFFSET,
+            margin=MARGIN,
+        )
+        self._bounds = bounds
         return x, y
 
     def _arm_dismiss_watcher(self) -> None:

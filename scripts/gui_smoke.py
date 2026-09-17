@@ -177,6 +177,126 @@ def check_review_advance() -> None:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def check_input_box() -> None:
+    """中译英输入框（新增功能）：弹出 / 回车翻译 / 复用 / 关闭的真 Tk 断言。
+
+    这是"GUI 事件链"里最容易回归的一环（#28 的教训）：用例、文案都对，但焦点与
+    关闭规则接错了，用户看到的行为就完全不是他要求的那套。
+    """
+    import tkinter as tk
+
+    from snaptranslate.application.dto import OutcomeKind, TranslationOutcome
+    from snaptranslate.domain.models.translation import TranslationResult
+    from snaptranslate.presentation.tk.input_box import OverlayInputBox
+
+    class _Pointer:
+        def __init__(self) -> None:
+            self.point = (400, 400)
+
+        def position(self) -> tuple[int, int]:
+            return self.point
+
+    class _Watcher:
+        def __init__(self) -> None:
+            self.callback = None
+            self.running = False
+
+        def start(self, callback) -> None:
+            self.callback = callback
+            self.running = True
+
+        def stop(self) -> None:
+            self.running = False
+
+        def fire(self) -> None:
+            if self.callback is not None:
+                self.callback()
+
+    class _Activator:
+        def __init__(self) -> None:
+            self.restored: list[int] = []
+
+        def foreground(self) -> int:
+            return 4242
+
+        def force_foreground(self, hwnd: int) -> None:
+            self.restored.append(hwnd)
+
+    def _outcome(text: str) -> TranslationOutcome:
+        return TranslationOutcome(
+            kind=OutcomeKind.OK, source_text=text, result=TranslationResult(text)
+        )
+
+    root = tk.Tk()
+    root.withdraw()
+    pointer, watcher, activator = _Pointer(), _Watcher(), _Activator()
+    submitted: list[str] = []
+
+    def on_submit(text: str, done) -> None:
+        submitted.append(text)
+        done(_outcome("Hello"))
+
+    box = OverlayInputBox(
+        root,
+        pointer=pointer,
+        input_watcher=watcher,
+        window_activator=activator,
+        marshal=lambda fn: root.after(0, fn),
+        on_submit=on_submit,
+    )
+    try:
+        box.show((100, 100))
+        root.update()
+        check("输入框弹出并可见", box.is_visible())
+        check("弹出后处于输入状态（按键算输入，不算关闭）", box.is_accepting_input())
+
+        box._input.insert("1.0", "你好")
+        box._submit()
+        root.update()
+        check("回车把中文交给用例", submitted == ["你好"], f"submitted={submitted}")
+        check("英文显示在输出区", box.output_text() == "Hello", f"output={box.output_text()!r}")
+        check("中文留在输入框里", box.input_text() == "你好", f"input={box.input_text()!r}")
+        check("翻译完成后交出键盘焦点", not box.is_accepting_input())
+        # 第一次 force_foreground 是"把自己抢到前台"（得到输入焦点），最后一次是"还回去"
+        check(
+            "焦点还给原来的前台窗口",
+            activator.restored[-1] == 4242,
+            f"restored={activator.restored}",
+        )
+
+        # 鼠标左键点在框内 → "下一次输入"，而不是关闭
+        anchor = box.current_anchor()
+        assert anchor is not None
+        pointer.point = (anchor[0] + 20, anchor[1] + 20)
+        watcher.fire()
+        root.update()
+        check("点框内不算关闭，而是回到输入状态", box.is_visible() and box.is_accepting_input())
+
+        # 连按两次回车：先回来的旧结果必须被丢掉，只认最后一次
+        pending: list = []
+        box._on_submit = lambda text, done: (submitted.append(text), pending.append(done))
+        box._submit()
+        box._submit()
+        stale, latest = pending[0], pending[1]
+        stale(_outcome("旧结果"))
+        root.update()
+        check("过期结果被丢弃", box.output_text() != "旧结果", f"output={box.output_text()!r}")
+        latest(_outcome("新结果"))
+        root.update()
+        check("只有最后一次结果生效", box.output_text() == "新结果", f"output={box.output_text()!r}")
+
+        # 框外输入（按键/点击）→ 关闭，并停掉监听
+        box._release_focus()
+        pointer.point = (5, 5)
+        watcher.fire()
+        root.update()
+        check("框外输入后关闭", not box.is_visible())
+        check("关闭后停止输入监听", not watcher.running)
+    finally:
+        box.shutdown()
+        root.destroy()
+
+
 def check_with_tk() -> None:
     print("\n=== 2. 真实 Tk 构造（--with-tk） ===")
     try:
@@ -218,16 +338,39 @@ def check_with_tk() -> None:
 
         # KNOWN_ISSUES #21 的回归：界面改热键必须立即同步到监听器（原版每轮重新读热键）
         if name == "TranslateApp":
+            original_hotkeys = dict(app.hotkeys)  # 自检不该改用户的设置，跑完还原
             try:
                 app.hotkey_translate_var.set("alt+z")
                 app.hotkey_snip_var.set("tab+q")
                 app.hotkey_save_var.set("tab+e")
+                # 新增功能：第 4 组（中译英输入框）必须一起应用并同步
+                app.hotkey_input_var.set("ctrl+i")
                 app.on_apply_hotkeys()
                 bindings = getattr(app.deps.hotkey_listener, "_bindings", None)
                 synced = bindings is not None and bindings.translate.label == "ALT+Z"
                 check("改热键后监听器即时同步（无需重启）", synced, f"bindings={bindings}")
+                four = (
+                    bindings is not None
+                    and bindings.input is not None
+                    and bindings.input.label == "CTRL+I"
+                )
+                check("四组热键（含中译英）一起生效", four, f"bindings={bindings}")
+                check(
+                    "第 4 组热键出现在标题提示行",
+                    "中译英：CTRL+I" in (app.hotkey_hint_var.get() if app.hotkey_hint_var else ""),
+                    f"hint={app.hotkey_hint_var.get() if app.hotkey_hint_var else None!r}",
+                )
             except Exception as exc:  # noqa: BLE001
                 check("改热键后监听器即时同步（无需重启）", False, f"{type(exc).__name__}: {exc}")
+            finally:
+                try:
+                    app.hotkey_translate_var.set(original_hotkeys["translate"])
+                    app.hotkey_snip_var.set(original_hotkeys["snip"])
+                    app.hotkey_save_var.set(original_hotkeys["save_last"])
+                    app.hotkey_input_var.set(original_hotkeys.get("input", "ctrl+i"))
+                    app.on_apply_hotkeys()
+                except Exception:  # noqa: BLE001
+                    pass
 
             check_floating_card(app, root)
             check_proxy_row(app)
@@ -244,6 +387,7 @@ def check_with_tk() -> None:
             check(f"{name} 拿到 Tk root", False, f"got {type(root).__name__}")
 
     check_review_advance()
+    check_input_box()
 
 
 def main() -> int:
