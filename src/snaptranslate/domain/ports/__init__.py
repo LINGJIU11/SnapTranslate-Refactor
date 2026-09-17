@@ -12,7 +12,9 @@ from snaptranslate.domain.ports.clipboard import Clipboard
 from snaptranslate.domain.ports.clock import Clock
 from snaptranslate.domain.ports.example_generator import ExampleGenerator
 from snaptranslate.domain.ports.hotkey_listener import HotkeyBindings, HotkeyCallbacks, HotkeyListener
+from snaptranslate.domain.ports.input_watcher import InputWatcher
 from snaptranslate.domain.ports.ocr import OcrEngine, OcrStage, StageCallback
+from snaptranslate.domain.ports.pointer import Pointer
 from snaptranslate.domain.ports.selection_reader import SelectionReader
 from snaptranslate.domain.ports.settings_repository import SettingsRepository
 from snaptranslate.domain.ports.translator import Translator
@@ -30,8 +32,10 @@ __all__ = [
     "HotkeyBindings",
     "HotkeyCallbacks",
     "HotkeyListener",
+    "InputWatcher",
     "OcrEngine",
     "OcrStage",
+    "Pointer",
     "SelectionReader",
     "SettingsRepository",
     "StageCallback",

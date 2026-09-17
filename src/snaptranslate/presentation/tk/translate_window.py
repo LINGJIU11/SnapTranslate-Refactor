@@ -123,6 +123,9 @@ class TranslateApp:
             self.deps.hotkey_listener.stop()
         except Exception:
             pass
+        if self._floating is not None:
+            # 停掉"任意键/鼠标键"监听线程，避免退出后还有线程在查键态
+            self._floating.shutdown()
         if self.root is not None:
             self.root.destroy()
 
@@ -141,9 +144,11 @@ class TranslateApp:
         self._cursor = CursorStatusWindow(root, cursor_position=self._cursor_position, is_enabled=self.floating_enabled)
         self._floating = FloatingCard(
             root,
-            cursor_position=self._cursor_position,
+            pointer=self.deps.pointer,
             is_enabled=self.floating_enabled,
             on_collect=self.on_floating_save_click,
+            input_watcher=self.deps.input_watcher,
+            marshal=lambda fn: root.after(0, fn),
         )
         self._bridge = StatusBridge(self._dispatcher, self._cursor)
         self._presenter = ResultPresenter(
@@ -246,12 +251,16 @@ class TranslateApp:
     def on_floating_save_click(self) -> None:
         """原 ``_on_floating_save_click``：收录卡片当前的**原文 + display 文本**。
 
-        **行为等价：保留原版缺陷（见 KNOWN_ISSUES.md #2）** —— 卡片上的译文是
+        **行为等价：保留原版缺陷（见 KNOWN_ISSUES.md #6）** —— 卡片上的译文是
         ``TranslationResult.display_text``（可能带"（Google 最快返回）"标签），
         原版把这段带标签的文本原样写进生词本的 ``meaning``。
+
+        锚点用卡片当前位置：收录反馈就地弹出，不会跳到别处（见 KNOWN_ISSUES.md #23）。
         """
         card = self._require_floating()
-        self._require_runner().submit_collect(clean_text(card.original), clean_text(card.translated))
+        self._require_runner().submit_collect(
+            clean_text(card.original), clean_text(card.translated), anchor=card.current_anchor()
+        )
 
     def on_delete_saved(self, index: int) -> None:
         """原 ``_delete_saved_word``（主线程直接执行，与原版一致）。"""
@@ -341,14 +350,19 @@ class TranslateApp:
     # ———————————————————————— 小工具 ————————————————————————
 
     def _cursor_position(self) -> tuple[int, int]:
-        """原 ``get_cursor_pos``（``GetCursorPos``）：这里用 Tk 等价实现，避免表示层碰 Win32。"""
-        root = self.root
-        if root is None:
-            return (0, 0)
+        """当前鼠标屏幕坐标（原 ``get_cursor_pos``，``main.py:617-620``）。
+
+        走注入的 :class:`~snaptranslate.domain.ports.pointer.Pointer`（Win32 ``GetCursorPos``），
+        因此**监听线程也能安全调用**——悬浮卡片的锚点就是靠它在热键按下瞬间取的。
+        """
         try:
-            return root.winfo_pointerxy()
-        except tk.TclError:
+            return self.deps.pointer.position()
+        except Exception:
             return (0, 0)
+
+    def pointer_position(self) -> tuple[int, int]:
+        """``PresenterHost`` 契约：``ResultPresenter.capture_anchor`` 用它取锚点。"""
+        return self._cursor_position()
 
     @staticmethod
     def _log_line(message: str) -> None:

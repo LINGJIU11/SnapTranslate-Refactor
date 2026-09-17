@@ -51,11 +51,22 @@ class ResultSink(Protocol):
 
     def append_log(self, original: str, result: str) -> None: ...
 
-    def show_float(self, title: str, message: str, *, duration_ms: int) -> None: ...
+    def capture_anchor(self) -> tuple[int, int] | None:
+        """取"当前鼠标位置"作为浮层锚点（在**热键按下瞬间**调用，见 KNOWN_ISSUES.md #23）。"""
+        ...
+
+    def show_float(self, title: str, message: str, *, anchor: tuple[int, int] | None = None) -> None: ...
 
     def show_cursor(self, message: str, *, duration_ms: int | None = None) -> None: ...
 
-    def show_result(self, original: str, result: str, *, save_translation: str | None = None) -> None: ...
+    def show_result(
+        self,
+        original: str,
+        result: str,
+        *,
+        save_translation: str | None = None,
+        anchor: tuple[int, int] | None = None,
+    ) -> None: ...
 
     def refresh_recent(self, original: str, translated: str) -> None: ...
 
@@ -73,7 +84,7 @@ class FeedbackSink(Protocol):
 
     def set_status(self, message: str) -> None: ...
 
-    def show_float(self, title: str, message: str, *, duration_ms: int) -> None: ...
+    def show_floating(self, title: str, message: str, *, anchor: tuple[int, int] | None = None) -> None: ...
 
 
 class PresenterHost(Protocol):
@@ -96,6 +107,8 @@ class PresenterHost(Protocol):
     def status_message(self) -> str: ...
 
     def floating_enabled(self) -> bool: ...
+
+    def pointer_position(self) -> tuple[int, int]: ...
 
     def refresh_saved_ui(self) -> None: ...
 
@@ -156,6 +169,13 @@ class ResultPresenter:
         with self._last_lock:
             return self._last_original or "", self._last_translated or ""
 
+    def capture_anchor(self) -> tuple[int, int] | None:
+        """当前鼠标位置（Win32 调用，监听线程里也能用）。"""
+        try:
+            return self._host.pointer_position()
+        except Exception:
+            return None
+
     # ———————————————————————————— 端口：线程调度与状态 ————————————————————————————
 
     def post(self, fn: Callable[[], None]) -> None:
@@ -194,12 +214,15 @@ class ResultPresenter:
         """原 ``_clear_log``。"""
         self._transcript.clear()
 
-    def show_float(self, title: str, message: str, *, duration_ms: int) -> None:
-        """线程安全地弹悬浮卡片（关掉"鼠标旁悬浮提示"时内部直接返回）。"""
+    def show_float(self, title: str, message: str, *, anchor: tuple[int, int] | None = None) -> None:
+        """线程安全地弹悬浮卡片（关掉"鼠标旁悬浮提示"时内部直接返回）。
+
+        卡片不再定时消失：等用户下一次按键/点鼠标才关（见 KNOWN_ISSUES.md #24）。
+        """
 
         def apply() -> None:
             if self._host.floating_enabled():
-                self._floating.show(title, message, duration_ms=duration_ms)
+                self._floating.show(title, message, anchor=anchor)
 
         self.post(apply)
 
@@ -209,7 +232,14 @@ class ResultPresenter:
 
     # ———————————————————————————— 端口：结果落地 ————————————————————————————
 
-    def show_result(self, original: str, result: str, *, save_translation: str | None = None) -> None:
+    def show_result(
+        self,
+        original: str,
+        result: str,
+        *,
+        save_translation: str | None = None,
+        anchor: tuple[int, int] | None = None,
+    ) -> None:
         """原 ``_ui_show_result``：记住"最近一条翻译" → 日志 → 最近 3 条 → 悬浮卡片。"""
         stored = save_translation if save_translation is not None else result
         with self._last_lock:
@@ -218,7 +248,7 @@ class ResultPresenter:
         self._host.remember_last_translation(original, stored)
         self.append_log(original, result)
         self.refresh_recent(original, stored)
-        self._floating.show(original, result)
+        self._floating.show(original, result, anchor=anchor)
 
     def refresh_recent(self, original: str, translated: str) -> None:
         """原 ``_push_recent_translation`` + ``_refresh_recent_ui``（存**干净译文**）。"""

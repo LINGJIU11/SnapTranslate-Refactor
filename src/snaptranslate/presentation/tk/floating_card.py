@@ -1,15 +1,14 @@
-"""鼠标旁"翻译结果悬浮卡片"。
+"""翻译结果悬浮卡片（原 ``_show_floating_near_cursor``，``main.py:669-741``）。
 
-职责：一个 500×140 的无边框深色 ``Toplevel``，内容为 ``f"{原文}\\n=> {译文}"``，
-位置=光标 ``+16/+16`` 并夹在屏内，``duration_ms`` 到点后 ``withdraw``；卡片内带一个
-"收录生词本"按钮，其回调由外部注入。对应原版：``_show_floating_near_cursor``
-（``main.py:669-741``）。
+与原版的差异（都是用户明确要求的改动，见 KNOWN_ISSUES.md #23 / #24）：
 
-**行为等价要点（原版缺陷，见 KNOWN_ISSUES.md #2）**：卡片只保留最近一次传入的
-``原始文本 + 译文``，而"收录生词本"按钮收录的是这一刻卡片上的文本——调用方在显示翻译
-结果时会传 ``TranslationResult.display_text``（**带引擎标签**），因此从悬浮卡片收录进
-生词本的 ``meaning`` 是带"（Google 最快返回）"的 display 文本；而主界面"最近 3 条"
-的收录按钮走的是干净译文。这里原样保留。
+1. **锚点 = 热键按下瞬间的鼠标位置**（``anchor``），而不是"翻译返回时鼠标在哪"。
+   原版是在结果回来后才读光标，于是"选中单词后手一动、卡片就飘到别处"。
+2. **不再定时自动关闭**：卡片一直显示，直到用户**下一次按任意键或鼠标左/右键**才消失
+   （全局判定，不限于卡片窗口内；点在卡片上——例如"收录生词本"按钮——不算关闭信号）。
+
+保留的原版行为（见 KNOWN_ISSUES.md #6）：卡片承载的是调用方传入的文本，
+翻译结果那一路传的是带引擎标签的 ``display_text``。
 """
 
 from __future__ import annotations
@@ -18,6 +17,8 @@ import tkinter as tk
 from typing import Callable
 
 from snaptranslate.config.theme import UI_FLOAT_BG
+from snaptranslate.domain.ports.input_watcher import InputWatcher
+from snaptranslate.domain.ports.pointer import Pointer
 from snaptranslate.presentation.texts import WindowText
 from snaptranslate.presentation.tk.ui_kit import FLOAT_BORDER_COLOR, floating_label, small_button
 
@@ -27,44 +28,69 @@ POPUP_WIDTH = 500
 POPUP_HEIGHT = 140
 #: 原 ``main.py:699``
 WRAP_LENGTH = 460
-#: 原 ``main.py:733``：位置 = 光标 +16，并夹在屏内
+#: 原 ``main.py:733``：位置 = 锚点 +16，并夹在屏内
 OFFSET = 16
 MARGIN = 10
-#: 原 ``main.py:669`` 默认 2200ms；错误提示用 2800ms、收录反馈用 2000ms
-DEFAULT_DURATION_MS = 2200
+
+Bounds = tuple[int, int, int, int]  # (left, top, right, bottom)
+
+
+def is_inside(bounds: Bounds, point: tuple[int, int]) -> bool:
+    """鼠标是否落在卡片矩形内（纯函数，便于单测）。"""
+    left, top, right, bottom = bounds
+    x, y = point
+    return left <= x < right and top <= y < bottom
 
 
 class FloatingCard:
     """悬浮卡片控件。
 
     :param root: 主窗口。
-    :param cursor_position: 返回鼠标屏幕坐标 ``(x, y)``（注入）。
+    :param pointer: 取鼠标屏幕坐标（Win32，线程安全）。
     :param is_enabled: 返回"鼠标旁悬浮提示"是否勾选（读 Tk 变量）。
     :param on_collect: "收录生词本"按钮回调（原 ``_on_floating_save_click``）。
+    :param input_watcher: 监听"任意键 / 鼠标左右键"，用于关闭卡片。
+    :param marshal: 把回调切回主线程（``root.after(0, ...)``）。
     """
 
     def __init__(
         self,
         root: tk.Tk,
         *,
-        cursor_position: Callable[[], tuple[int, int]],
+        pointer: Pointer,
         is_enabled: Callable[[], bool],
         on_collect: Callable[[], None],
+        input_watcher: InputWatcher,
+        marshal: Callable[[Callable[[], None]], None],
     ) -> None:
         self._root = root
-        self._cursor_position = cursor_position
+        self._pointer = pointer
         self._is_enabled = is_enabled
         self._on_collect = on_collect
+        self._input_watcher = input_watcher
+        self._marshal = marshal
         self._window: tk.Toplevel | None = None
         self._label: tk.Label | None = None
         self._button: tk.Button | None = None
-        self._timer_id: str | None = None
+        #: 当前卡片的屏幕矩形（主线程写、监听线程读，只做整体替换，天然安全）
+        self._bounds: Bounds | None = None
         #: 原 ``_floating_original`` / ``_floating_translated``：卡片当前承载的文本
         self.original = ""
         self.translated = ""
 
-    def show(self, original: str, translated: str, *, duration_ms: int = DEFAULT_DURATION_MS) -> None:
-        """原 ``_show_floating_near_cursor``（本方法要求在主线程调用）。"""
+    # ———————————————————————————— 对外 ————————————————————————————
+
+    def show(
+        self,
+        original: str,
+        translated: str,
+        *,
+        anchor: tuple[int, int] | None = None,
+    ) -> None:
+        """显示卡片（要求主线程调用）。
+
+        :param anchor: 锚点坐标（一般是**热键按下瞬间**的鼠标位置）；为 ``None`` 时退回当前鼠标位置。
+        """
         if not self._is_enabled():
             return
 
@@ -80,20 +106,65 @@ class FloatingCard:
         window = self._window
         if window is None:
             return
-        cursor_x, cursor_y = self._cursor_position()
+
+        point = anchor if anchor is not None else self._pointer.position()
+        x, y = self._place(point)
+        window.geometry(f"{POPUP_WIDTH}x{POPUP_HEIGHT}+{x}+{y}")
+        window.deiconify()
+        window.lift()
+        self._arm_dismiss_watcher()
+
+    def hide(self) -> None:
+        """关闭卡片（要求主线程调用）；同时停掉输入监听。"""
+        self._input_watcher.stop()
+        window = self._window
+        if window is None:
+            return
+        try:
+            window.withdraw()
+        except tk.TclError:
+            pass
+
+    def shutdown(self) -> None:
+        """程序退出时清理：停掉监听线程，不再碰 Tk。"""
+        self._input_watcher.stop()
+
+    def current_anchor(self) -> tuple[int, int] | None:
+        """卡片当前左上角（用于"收录"反馈就地显示）。"""
+        if self._bounds is None:
+            return None
+        return (self._bounds[0], self._bounds[1])
+
+    def is_visible(self) -> bool:
+        return self._bounds is not None and self._window is not None and bool(self._window.winfo_viewable())
+
+    # ———————————————————————————— 内部 ————————————————————————————
+
+    def _place(self, point: tuple[int, int]) -> tuple[int, int]:
+        """按锚点算出卡片左上角：``+16`` 偏移并夹在屏内（原 ``main.py:733-734``）。"""
+        cursor_x, cursor_y = point
         screen_w = self._root.winfo_screenwidth()
         screen_h = self._root.winfo_screenheight()
         x = min(max(MARGIN, cursor_x + OFFSET), max(MARGIN, screen_w - POPUP_WIDTH - MARGIN))
         y = min(max(MARGIN, cursor_y + OFFSET), max(MARGIN, screen_h - POPUP_HEIGHT - MARGIN))
-        window.geometry(f"{POPUP_WIDTH}x{POPUP_HEIGHT}+{x}+{y}")
-        window.deiconify()
-        window.lift()
+        self._bounds = (x, y, x + POPUP_WIDTH, y + POPUP_HEIGHT)
+        return x, y
 
-        if self._timer_id is not None:
-            window.after_cancel(self._timer_id)
-        self._timer_id = window.after(duration_ms, window.withdraw)
+    def _arm_dismiss_watcher(self) -> None:
+        self._input_watcher.stop()
+        self._input_watcher.start(self._on_any_input)
 
-    # —— 内部 ——
+    def _on_any_input(self) -> None:
+        """输入监听线程的回调：用户在卡片**之外**按键/点鼠标 → 关闭卡片。"""
+        if self._pointer_inside_card():
+            return
+        self._marshal(self.hide)
+
+    def _pointer_inside_card(self) -> bool:
+        bounds = self._bounds
+        if bounds is None:
+            return False
+        return is_inside(bounds, self._pointer.position())
 
     def _build(self, message: str) -> None:
         top = tk.Toplevel(self._root)
@@ -115,3 +186,6 @@ class FloatingCard:
         self._window = top
         self._label = label
         self._button = button
+
+
+__all__ = ["FloatingCard", "Bounds", "is_inside", "FLOATING_ALPHA", "OFFSET", "POPUP_HEIGHT", "POPUP_WIDTH"]

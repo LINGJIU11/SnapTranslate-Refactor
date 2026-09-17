@@ -1,14 +1,14 @@
-"""生词本收录 / 删除的界面反馈。
+"""生词本收录 / 删除的界面反馈（原 ``_ui_vocab_feedback`` ``main.py:868-873``）。
 
 职责：把"用例返回的结果种类"变成"日志 + 状态栏 + 悬浮提示"三件套。
-对应原版：
+文案一律来自 :class:`~snaptranslate.presentation.texts.CollectText`。
 
-- ``_ui_vocab_feedback``  ``main.py:868-873``
-- ``_do_save_vocab_job``  ``main.py:1473-1503``（判空/判重/落盘在用例里，这里只做反馈）
-- ``_delete_saved_word``  ``main.py:916-934``
+两个要点：
 
-文案一律来自 :class:`~snaptranslate.presentation.texts.CollectText`；
-``bool`` 返回值决定是否额外弹悬浮提示（原版只有"未找到/删除失败/空记录"会弹）。
+1. ``floating`` 参数必须被真正遵守——原版的取值是
+   ``ADDED``/``DUPLICATE``/``FAILED`` 弹卡片、``EMPTY``/``NO_LAST`` 不弹；
+2. ``anchor`` 让卡片显示在"触发时鼠标所在的位置"（见 KNOWN_ISSUES.md #23），
+   卡片也不再定时消失（#24）。
 """
 
 from __future__ import annotations
@@ -19,11 +19,10 @@ from snaptranslate.application.dto import CollectKind, DeleteKind
 from snaptranslate.presentation.texts import CollectText
 from snaptranslate.presentation.tk.translate_sink import FeedbackSink
 
-#: 原 ``main.py:866`` / ``main.py:873``：错误提示 2800ms、收录反馈 2000ms
-ERROR_FLOAT_DURATION_MS = 2800
-VOCAB_FLOAT_DURATION_MS = 2000
 #: 收录提示的标题（唯一出口在 ``texts.CollectText.TITLE``，原版是字面量 ``"生词本"``）
 VOCAB_TITLE = CollectText.TITLE
+
+Anchor = tuple[int, int] | None
 
 
 class CollectionFeedback:
@@ -50,32 +49,34 @@ class CollectionFeedback:
 
     # —— 收录（原 ``_do_save_vocab_job`` / ``_do_save_last_translation_job``）——
 
-    def collect_feedback(self, kind: CollectKind, word: str, *, floating: bool) -> None:
-        """把收录结果写进日志/状态栏；``floating=True`` 时额外弹悬浮提示。
-
-        原版 ``_ui_vocab_feedback(title, msg, floating=True)`` 的实际取值：
-        ``ADDED``（已记录到生词本）/ ``DUPLICATE``（已存在）/ ``FAILED``（写入出错）都为
-        ``True`` —— **收录成功同样弹悬浮卡片**；只有 ``EMPTY``（暂无可记录内容，
-        ``main.py:1476``）与 ``NO_LAST``（``main.py:1060``）为 ``False``。
-        """
+    def collect_feedback(
+        self,
+        kind: CollectKind,
+        word: str,
+        *,
+        floating: bool,
+        anchor: Anchor = None,
+    ) -> None:
+        """把收录结果写进日志/状态栏；``floating=True`` 时额外弹悬浮提示。"""
         texts = CollectText.for_outcome(kind, word, self._hotkey_label())
         if texts is None:
             return
         title, message = texts
-        self.feedback(title, message, floating=floating)
+        self.feedback(title, message, floating=floating, anchor=anchor)
         if kind is CollectKind.ADDED:
             self._refresh_saved()
 
-    def feedback(self, title: str, message: str, *, floating: bool = True) -> None:
-        """原 ``_ui_vocab_feedback``。"""
+    def feedback(self, title: str, message: str, *, floating: bool = True, anchor: Anchor = None) -> None:
+        """原 ``_ui_vocab_feedback``：日志 + 状态栏（+ 可选悬浮卡片）。"""
         self._sink.append_log(title, message)
         self._sink.set_status(message)
-        self._maybe_floating(title, message)
+        if floating:
+            self._maybe_floating(title, message, anchor)
 
     # —— 删除（原 ``_delete_saved_word``）——
 
     def delete_feedback(self, kind: DeleteKind, word: str) -> None:
-        """``DELETED`` 走"追加日志 + 状态栏"，其余分支只改状态栏并可选弹悬浮。"""
+        """``DELETED`` 走"追加日志 + 状态栏"，其余分支只改状态栏（都不弹悬浮）。"""
         message, floating = CollectText.for_delete(kind, word)
         if kind is DeleteKind.DELETED:
             self._refresh_saved()
@@ -85,7 +86,10 @@ class CollectionFeedback:
         if floating:
             self._maybe_floating(VOCAB_TITLE, message)
 
-    def _maybe_floating(self, title: str, message: str) -> None:
+    def _maybe_floating(self, title: str, message: str, anchor: Anchor = None) -> None:
         if not self._floating_allowed():
             return
-        self._sink.show_floating(title, message, duration_ms=VOCAB_FLOAT_DURATION_MS)
+        self._sink.show_floating(title, message, anchor=anchor)
+
+
+__all__ = ["Anchor", "CollectionFeedback", "VOCAB_TITLE"]

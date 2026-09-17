@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +53,56 @@ def check_interfaces() -> None:
     }
     for name, bundle in bundles.items():
         check(f"{name} 构建成功", bundle is not None)
+
+
+class _StubPointer:
+    """可编程的鼠标位置（替代真实的 Win32 取点，便于断言）。"""
+
+    def __init__(self, position: tuple[int, int] = (0, 0)) -> None:
+        self.position_xy = position
+
+    def position(self) -> tuple[int, int]:
+        return self.position_xy
+
+
+def check_floating_card(app, root) -> None:
+    """悬浮卡片的两条新行为（KNOWN_ISSUES.md #23 / #24），用真实 Tk 验证。"""
+    card = app._floating  # noqa: SLF001 - 冒烟脚本，白盒检查
+    if card is None:
+        check("悬浮卡片存在", False)
+        return
+
+    stub = _StubPointer((0, 0))
+    card._pointer = stub  # noqa: SLF001
+
+    anchor = (600, 400)
+    stub.position_xy = (5000, 5000)  # 显示时的真实鼠标位置与锚点无关
+    card.show("hello", "你好", anchor=anchor)
+    root.update()
+    bounds = (anchor[0] + 16, anchor[1] + 16)
+    check("卡片按锚点定位（热键时位置，而非显示时鼠标位置）", card.current_anchor() == bounds,
+          f"current_anchor={card.current_anchor()} 期望={bounds}")
+    check("卡片显示中", card.is_visible())
+
+    # 不再定时自动关闭：等一段时间后仍然可见
+    deadline = time.monotonic() + 0.4
+    while time.monotonic() < deadline:
+        root.update()
+        time.sleep(0.01)
+    check("卡片不会自动消失（等待 0.4s 仍可见）", card.is_visible())
+
+    # 鼠标在卡片内按下（例如点"收录生词本"）→ 不关闭
+    stub.position_xy = (bounds[0] + 10, bounds[1] + 10)
+    card._on_any_input()  # noqa: SLF001 - 模拟输入监听线程回调
+    root.update()
+    check("点在卡片上不关闭", card.is_visible())
+
+    # 鼠标在卡片外按键/点鼠标 → 关闭
+    stub.position_xy = (anchor[0] + 900, anchor[1] + 600)
+    card._on_any_input()  # noqa: SLF001
+    root.update()
+    check("卡片外输入后关闭", not card.is_visible())
+    check("关闭后输入监听停止", not app.deps.input_watcher.is_running())
 
 
 def check_with_tk() -> None:
@@ -105,6 +156,8 @@ def check_with_tk() -> None:
                 check("改热键后监听器即时同步（无需重启）", synced, f"bindings={bindings}")
             except Exception as exc:  # noqa: BLE001
                 check("改热键后监听器即时同步（无需重启）", False, f"{type(exc).__name__}: {exc}")
+
+            check_floating_card(app, root)
 
         if isinstance(root, tk.Misc):
             try:

@@ -34,11 +34,14 @@ from snaptranslate.domain.ports.clock import Clock
 from snaptranslate.domain.ports.example_generator import ExampleGenerator
 from snaptranslate.domain.ports.hotkey_listener import HotkeyListener
 from snaptranslate.domain.ports.ocr import OcrEngine
+from snaptranslate.domain.ports.pointer import Pointer
 from snaptranslate.domain.ports.translator import Translator
 from snaptranslate.domain.ports.tts import TextToSpeech
 from snaptranslate.domain.ports.vocabulary_repository import VocabularyRepository
 from snaptranslate.infrastructure.input.win32_clipboard import PyperclipClipboard
 from snaptranslate.infrastructure.input.win32_hotkeys import Win32PollingHotkeyListener
+from snaptranslate.infrastructure.input.win32_input_watcher import Win32InputWatcher
+from snaptranslate.infrastructure.input.win32_pointer import Win32Pointer
 from snaptranslate.infrastructure.input.win32_selection import Win32SelectionReader
 from snaptranslate.infrastructure.input.win32_window import Win32WindowActivator
 from snaptranslate.infrastructure.llm.deepseek import DeepSeekExampleGenerator
@@ -98,6 +101,7 @@ class Container:
         self._clipboard = PyperclipClipboard()
         self._selection = Win32SelectionReader(self._clipboard, clock=self.clock)
         self._window_activator = Win32WindowActivator()
+        self._pointer: Pointer = Win32Pointer()
         self._error_formatter = RequestsErrorFormatter()
 
     # —————————————— 基础设施 ——————————————
@@ -187,6 +191,8 @@ class Container:
             screenshot_usecase_factory=self.translate_screenshot_use_case,
             hotkey_listener=self.hotkey_listener(),
             window_activator=self._window_activator,
+            pointer=self._pointer,
+            input_watcher=Win32InputWatcher(),
             startup_backup=BackupVocabularyUseCase(
                 self.vocabulary_repository(), self.backup_writer()
             ).execute,

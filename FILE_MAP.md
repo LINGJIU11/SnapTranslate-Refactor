@@ -125,14 +125,15 @@
 
 | 文件 | 作用 |
 |---|---|
-| `domain/ports/*.py`（12 个） | 端口 Protocol：翻译、OCR、朗读、词表仓储、设置仓储、API Key、备份、剪贴板、取词、热键、窗口激活、例句生成、时钟、错误格式化 |
+| `domain/ports/*.py`（16 个） | 端口 Protocol：翻译、OCR、朗读、词表仓储、设置仓储、API Key、备份、剪贴板、取词、热键、鼠标位置、输入监听、窗口激活、例句生成、时钟、错误格式化 |
 | `domain/services/review_session.py` | 复习会话状态机（桌面端与 Web 端共用） |
 | `application/deps.py` | 表示层依赖包（四套：划词 / 复习 / 网页 / 后台） |
 | `application/progress.py`、`application/dto.py` | 流程阶段枚举 + 进度回调 + 用例结果对象 |
 | `application/vocabulary_target.py` | 当前词表绑定（支持复习端切换词表文件） |
 | `application/backup.py` | 启动备份用例 |
 | `presentation/texts.py` | 全部界面文案的唯一出口 |
-| `presentation/tk/translate_sink.py`、`app_events.py` | 线程安全的结果出口 + 热键→线程→用例编排 |
+| `presentation/tk/translate_sink.py`、`app_events.py` | 线程安全的结果出口 + 热键→线程→用例编排（含"触发瞬间取锚点"） |
+| `infrastructure/input/win32_pointer.py`、`win32_input_watcher.py` | 鼠标位置（`GetCursorPos`）与"任意键/鼠标键按下"监听（浮层锚点与关闭，见 KNOWN_ISSUES #23/#24） |
 | `presentation/tk/translate_ui.py` | 面板与窗口壳的 Protocol 契约 |
 | `bootstrap/container.py` / `wiring.py` / `cli.py` / `streamlit_entry.py` | 组合根与四类进程入口 |
 | `scripts/*.py`（6 个） | 分层校验 / 对拍 / 冒烟 / Tk 冒烟 / Web 结构对拍 / 一键全跑 |

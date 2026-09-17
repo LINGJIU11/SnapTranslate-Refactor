@@ -24,6 +24,8 @@ from snaptranslate.domain.ports.api_key_store import ApiKeyStore
 from snaptranslate.domain.ports.backup_writer import BackupResult
 from snaptranslate.domain.ports.example_generator import ExampleGenerator
 from snaptranslate.domain.ports.hotkey_listener import HotkeyListener
+from snaptranslate.domain.ports.input_watcher import InputWatcher
+from snaptranslate.domain.ports.pointer import Pointer
 from snaptranslate.domain.ports.window import WindowActivator
 
 #: 翻译源取值提供者（读界面单选框）
@@ -54,6 +56,10 @@ class TranslateAppDeps:
     screenshot_usecase_factory: ScreenshotUseCaseFactory
     hotkey_listener: HotkeyListener
     window_activator: WindowActivator
+    #: 取鼠标位置（悬浮卡片以"热键按下瞬间"的位置为锚点，见 KNOWN_ISSUES.md #23）
+    pointer: Pointer
+    #: 监听"任意键 / 鼠标左右键"（悬浮卡片不再定时消失，见 KNOWN_ISSUES.md #24）
+    input_watcher: InputWatcher
     startup_backup: Callable[[], BackupResult]
     vocab_path: str
 
