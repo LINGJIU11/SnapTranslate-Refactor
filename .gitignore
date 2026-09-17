@@ -16,3 +16,5 @@ main_settings.json
 vocab_review_settings.json
 vocab.json.tmp
 api_key.txt.tmp
+# 取词日志：每次运行都会追加，且运行中的程序会一直持有句柄（备份/打包时会被锁）
+划词日志.txt
