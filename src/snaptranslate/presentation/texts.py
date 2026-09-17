@@ -79,6 +79,17 @@ class WindowText:
     HOTKEY_FIELDS = (("翻译", "translate"), ("截图", "snip"), ("收录", "save_last"))
     TTS_VOLUME_LABEL = "英文朗读音量（独立于系统音量）"
     RECENT_TRANSLATIONS_LABEL = "最近 3 条翻译（可直接收录生词本）"
+    # —— 代理（KNOWN_ISSUES.md #25）——
+    PROXY_LABEL = "网络代理（翻译请求走这里）"
+    PROXY_MODE_OFF = "直连"
+    PROXY_MODE_SYSTEM = "跟随系统代理"
+    PROXY_MODE_CUSTOM = "自定义"
+    PROXY_APPLY = "应用"
+    PROXY_TEST = "测试代理"
+    PROXY_HINT = "直连即可用 clients5 / MyMemory；本地 Clash 填 127.0.0.1:7897；香港出口走 WireGuard 的 10.8.0.6"
+    PROXY_APPLIED = "代理已应用：{detail}"
+    PROXY_TESTING = "正在测试代理…"
+    PROXY_TEST_RESULT = "代理测试：{detail}"
     RECENT_SAVED_LABEL = "最近加入生词本（可一键删除）"
     EMPTY_RECENT = "（暂无）"
     COLLECT_BUTTON = "收录"

@@ -13,6 +13,8 @@ from urllib.parse import quote
 import requests
 
 from snaptranslate.domain.models.translation import NO_TRANSLATION_RESULT, TranslationResult
+from snaptranslate.infrastructure.network.http import get as http_get
+from snaptranslate.infrastructure.network.proxy_policy import ProxyPolicy
 from snaptranslate.infrastructure.translation.cache import TranslationCache
 from snaptranslate.infrastructure.translation.policy import (
     HTTP_HEADERS,
@@ -39,12 +41,14 @@ class LingvaTranslator:
         *,
         timeout=TRANSLATE_TIMEOUT,
         retries: int = TRANSLATE_RETRIES,
+        policy: ProxyPolicy | None = None,
     ) -> None:
         self.base = base.rstrip("/")
         self.host = host_of(base)
         self._cache = cache
         self._timeout = timeout
         self._retries = retries
+        self._policy = policy
 
     @property
     def label(self) -> str:
@@ -60,7 +64,7 @@ class LingvaTranslator:
         url = f"{self.base}/api/v1/auto/zh/{segment}"
         for attempt in range(self._retries):
             try:
-                resp = requests.get(url, timeout=self._timeout, headers=HTTP_HEADERS)
+                resp = http_get(url, timeout=self._timeout, headers=HTTP_HEADERS, policy=self._policy)
                 resp.raise_for_status()
                 data = resp.json()
                 if not isinstance(data, dict):

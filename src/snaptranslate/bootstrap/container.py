@@ -45,6 +45,8 @@ from snaptranslate.infrastructure.input.win32_pointer import Win32Pointer
 from snaptranslate.infrastructure.input.win32_selection import Win32SelectionReader
 from snaptranslate.infrastructure.input.win32_window import Win32WindowActivator
 from snaptranslate.infrastructure.llm.deepseek import DeepSeekExampleGenerator
+from snaptranslate.infrastructure.network import http as network_http
+from snaptranslate.infrastructure.network.proxy_policy import ProxyPolicy
 from snaptranslate.infrastructure.ocr.tesseract import TesseractOcrEngine
 from snaptranslate.infrastructure.persistence.api_key_file import FileApiKeyStore
 from snaptranslate.infrastructure.persistence.backup import FileBackupWriter
@@ -103,11 +105,25 @@ class Container:
         self._window_activator = Win32WindowActivator()
         self._pointer: Pointer = Win32Pointer()
         self._error_formatter = RequestsErrorFormatter()
+        #: 代理策略：启动时从设置读回；界面改完直接改这个对象，翻译请求立即按新策略走
+        self._proxy_policy = ProxyPolicy()
+        try:
+            mode, url = self.translate_settings().load_proxy()
+            self._proxy_policy.configure(mode, url)
+        except Exception:
+            pass
+
+    @property
+    def proxy_policy(self) -> ProxyPolicy:
+        return self._proxy_policy
 
     # —————————————— 基础设施 ——————————————
     def translator(self, source: str) -> Translator:
-        """按翻译源构造翻译器（共享同一个进程内缓存，等价于原版模块级缓存）。"""
-        return build_translator(source, self._cache)
+        """按翻译源构造翻译器（共享同一个进程内缓存，等价于原版模块级缓存）。
+
+        代理策略是**每次构造时读取当前值**，所以界面上改代理后立刻生效、无需重启。
+        """
+        return build_translator(source, self._cache, policy=self._proxy_policy)
 
     def tts(self) -> TextToSpeech:
         return self._tts
@@ -193,6 +209,8 @@ class Container:
             window_activator=self._window_activator,
             pointer=self._pointer,
             input_watcher=Win32InputWatcher(),
+            proxy_policy=self._proxy_policy,
+            proxy_probe=lambda url: network_http.probe(self._proxy_policy, url),
             startup_backup=BackupVocabularyUseCase(
                 self.vocabulary_repository(), self.backup_writer()
             ).execute,

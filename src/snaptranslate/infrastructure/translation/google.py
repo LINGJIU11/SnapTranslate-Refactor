@@ -13,6 +13,8 @@ from urllib.parse import quote
 import requests
 
 from snaptranslate.domain.models.translation import NO_TRANSLATION_RESULT, TranslationResult
+from snaptranslate.infrastructure.network.http import get as http_get
+from snaptranslate.infrastructure.network.proxy_policy import ProxyPolicy
 from snaptranslate.infrastructure.translation.cache import TranslationCache
 from snaptranslate.infrastructure.translation.policy import (
     HTTP_HEADERS,
@@ -31,10 +33,18 @@ class GoogleGtxTranslator:
     name = "google"
     cache_key = "google"
 
-    def __init__(self, cache: TranslationCache, *, timeout=TRANSLATE_TIMEOUT, retries: int = TRANSLATE_RETRIES) -> None:
+    def __init__(
+        self,
+        cache: TranslationCache,
+        *,
+        timeout=TRANSLATE_TIMEOUT,
+        retries: int = TRANSLATE_RETRIES,
+        policy: ProxyPolicy | None = None,
+    ) -> None:
         self._cache = cache
         self._timeout = timeout
         self._retries = retries
+        self._policy = policy
 
     def translate(self, text: str) -> TranslationResult:
         hit = self._cache.get(self.cache_key, text)
@@ -43,7 +53,7 @@ class GoogleGtxTranslator:
         url = f"{GTX_ENDPOINT}?client=gtx&sl=auto&tl=zh-CN&dt=t&q={quote(text)}"
         for attempt in range(self._retries):
             try:
-                resp = requests.get(url, timeout=self._timeout, headers=HTTP_HEADERS)
+                resp = http_get(url, timeout=self._timeout, headers=HTTP_HEADERS, policy=self._policy)
                 resp.raise_for_status()
                 data = json.loads(resp.text)
                 translated = "".join(part[0] for part in data[0] if part and part[0])
@@ -83,10 +93,18 @@ class GoogleClients5Translator:
     name = "google_clients5"
     cache_key = "google_c5"
 
-    def __init__(self, cache: TranslationCache, *, timeout=TRANSLATE_TIMEOUT, retries: int = TRANSLATE_RETRIES) -> None:
+    def __init__(
+        self,
+        cache: TranslationCache,
+        *,
+        timeout=TRANSLATE_TIMEOUT,
+        retries: int = TRANSLATE_RETRIES,
+        policy: ProxyPolicy | None = None,
+    ) -> None:
         self._cache = cache
         self._timeout = timeout
         self._retries = retries
+        self._policy = policy
 
     def translate(self, text: str) -> TranslationResult:
         hit = self._cache.get(self.cache_key, text)
@@ -95,7 +113,7 @@ class GoogleClients5Translator:
         url = f"{CLIENTS5_ENDPOINT}?client=dict-chrome-ex&sl=auto&tl=zh-CN&q={quote(text, safe='')}"
         for attempt in range(self._retries):
             try:
-                resp = requests.get(url, timeout=self._timeout, headers=HTTP_HEADERS)
+                resp = http_get(url, timeout=self._timeout, headers=HTTP_HEADERS, policy=self._policy)
                 resp.raise_for_status()
                 data = json.loads(resp.text)
                 translated = parse_clients5_payload(data)

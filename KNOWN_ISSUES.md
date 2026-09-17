@@ -15,12 +15,12 @@
 
 ## 一、翻译源与网络
 
-### #1 requests 不读 Windows 系统代理 `[保留]`
-- 位置：`infrastructure/translation/*`（与原 `main.py:97-99, 114` 一致，只传 headers，不传 proxies）。
-- 成因：`requests` 只认 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY` 环境变量，而 Clash Verge 的"系统代理"写的是
-  注册表 `HKCU\...\Internet Settings\ProxyServer`。**开着梯子也可能连不上 Google / Lingva**，静默退化到 MyMemory。
-- 影响：线路可用性完全取决于进程环境变量；用户很难自查。
-- 修复方向：设置项 `proxy`（system / 自定义 / 关闭），system 时读注册表并用 `requests(proxies=...)`。
+### #1 requests 不读 Windows 系统代理 `[已提供开关 → 见 #25]`
+- 位置：`infrastructure/network/http.py`（所有翻译请求统一走这里）。
+- 原状：`requests` 只认 `HTTP_PROXY/HTTPS_PROXY` 环境变量，而 Clash Verge 的"系统代理"写的是
+  注册表 `HKCU\...\Internet Settings\ProxyServer`，于是"开着梯子也用不上"。
+- 现在：新增代理设置（直连 / 跟随系统代理 / 自定义，见 §五 F6 #25），请求层按策略走代理；
+  仍保留"代理连不上自动回退直连"。
 
 ### #2 每次划词 = 5 路并发跨境请求 `[保留]`
 - 位置：`infrastructure/translation/racing.py`（与原 `main.py:262-304` 等价）。
@@ -135,6 +135,7 @@
 | D9 | **F3（#22）**：注入 Ctrl+C 前先等 Alt/Shift/Win 松开，并在按键之间留 15ms 间隔 | 见 §五；带来最多 ~0.6s 的等待（仅当热键含 Alt/Shift 时），Ctrl 组合热键不受影响 |
 | D10 | **F4（#23）**：悬浮卡片以"热键按下瞬间"的鼠标位置为锚点 | 见 §五；原版是结果返回后才读光标，选中单词后手一动卡片就飘走 |
 | D11 | **F5（#24）**：卡片不再定时自动关闭，改为"下一次按任意键/鼠标左右键"才关（点在卡片上不算） | 见 §五；新增一个 25ms 的输入监听线程（`Win32InputWatcher`） |
+| D12 | **F6（#25）**：新增代理设置（直连 / 跟随系统代理 / 自定义）+ 代理失败自动回退直连 | 见 §五；默认仍是直连，只有用户显式打开才走代理 |
 
 ---
 
@@ -213,6 +214,25 @@
 - **回归测试**：`tests/test_input_watcher.py`（7 项：启动时按着的键忽略、任意键/鼠标左右键触发、
   长按不重复、重复按再次触发、stop 生效）、`scripts/gui_smoke.py --with-tk`（真实 Tk：不自动消失、
   卡片内点击不关、卡片外输入关闭、关闭后监听停止）
+
+### F6 代理做进请求层（含"跟随系统代理"与失败回退）← 已加（#25）
+- **诉求**：`requests` 不读 Windows 系统代理（原 #1），"开着 Clash 也用不上梯子"。
+- **改法**：
+  1. 所有翻译请求统一走 `infrastructure/network/http.py:get()`：`trust_env=False`（不猜环境变量）
+     + 显式 `proxies`（由 `ProxyPolicy` 按主机决定）；
+  2. 三种模式（存 `main_settings.json` 的 `proxy_mode` / `proxy_url`）：`off` 直连（默认）、
+     `system` 读注册表 `Internet Settings`、`custom` 自定义；界面控制卡片里新增一行单选 + 地址 + 应用 + 测试；
+  3. **私有/回环地址永远直连**（`10.*` / `192.168.*` / `172.16-31.*` / localhost），不会把内网请求塞进代理；
+  4. **代理连不上自动回退直连一次**（`ProxyError` → 用空 proxies 重试），
+     所以"跟随系统代理"在 Clash 被关掉时只是退化成直连，而不是翻译全挂；
+  5. 改完**立即生效**（策略对象共享，界面改完下一个请求就按新策略走）。
+- **实测（本机，2026-09-17）**：`off` 直连可用（MyMemory，1014ms）；`system`/`custom`（Clash 127.0.0.1:7897）
+  可用且更快（clients5，664~710ms，译文也更完整）。同时确认 **gtx 仍 429、Lingva 被 Cloudflare 挡（403）**，
+  这两条与代理无关，属于线路本身失效（见 #3 / #4）。
+- **代码**：`config/proxy.py`、`domain/ports/proxy.py`、`infrastructure/network/{system_proxy,proxy_policy,http}.py`、
+  `infrastructure/translation/*`（4 个引擎接受 `policy`）、`application/settings.py`、`presentation/tk/{translate_panel,translate_shell,translate_window}.py`
+- **回归测试**：`tests/test_proxy.py`（17 项：模式解析、私有地址直连、回退直连、设置往返、引擎接线）、
+  `scripts/gui_smoke.py --with-tk`（界面改代理 → 策略即时生效 + 落盘）
 
 ---
 

@@ -26,6 +26,7 @@ from snaptranslate.domain.ports.example_generator import ExampleGenerator
 from snaptranslate.domain.ports.hotkey_listener import HotkeyListener
 from snaptranslate.domain.ports.input_watcher import InputWatcher
 from snaptranslate.domain.ports.pointer import Pointer
+from snaptranslate.domain.ports.proxy import ProxySettings
 from snaptranslate.domain.ports.window import WindowActivator
 
 #: 翻译源取值提供者（读界面单选框）
@@ -60,6 +61,10 @@ class TranslateAppDeps:
     pointer: Pointer
     #: 监听"任意键 / 鼠标左右键"（悬浮卡片不再定时消失，见 KNOWN_ISSUES.md #24）
     input_watcher: InputWatcher
+    #: 代理设置（界面可改、请求层即时生效，见 KNOWN_ISSUES.md #25）
+    proxy_policy: ProxySettings
+    #: 代理自检：``probe(url) -> (是否可用, 说明)``（界面"测试"按钮用）
+    proxy_probe: Callable[[str], tuple[bool, str]]
     startup_backup: Callable[[], BackupResult]
     vocab_path: str
 

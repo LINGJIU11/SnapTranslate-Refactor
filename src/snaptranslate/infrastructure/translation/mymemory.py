@@ -15,6 +15,8 @@ import requests
 
 from snaptranslate.domain.errors import TranslationError
 from snaptranslate.domain.models.translation import NO_TRANSLATION_RESULT, TranslationResult
+from snaptranslate.infrastructure.network.http import get as http_get
+from snaptranslate.infrastructure.network.proxy_policy import ProxyPolicy
 from snaptranslate.infrastructure.translation.cache import TranslationCache
 from snaptranslate.infrastructure.translation.policy import (
     HTTP_HEADERS,
@@ -54,10 +56,18 @@ class MyMemoryTranslator:
     name = "mymemory"
     cache_key = "mymemory"
 
-    def __init__(self, cache: TranslationCache, *, timeout=TRANSLATE_TIMEOUT, retries: int = TRANSLATE_RETRIES) -> None:
+    def __init__(
+        self,
+        cache: TranslationCache,
+        *,
+        timeout=TRANSLATE_TIMEOUT,
+        retries: int = TRANSLATE_RETRIES,
+        policy: ProxyPolicy | None = None,
+    ) -> None:
         self._cache = cache
         self._timeout = timeout
         self._retries = retries
+        self._policy = policy
 
     def translate(self, text: str) -> TranslationResult:
         hit = self._cache.get(self.cache_key, text)
@@ -66,11 +76,12 @@ class MyMemoryTranslator:
         for langpair in langpairs_for(text):
             for attempt in range(self._retries):
                 try:
-                    resp = requests.get(
+                    resp = http_get(
                         MYMEMORY_ENDPOINT,
                         params={"q": text, "langpair": langpair},
                         timeout=self._timeout,
                         headers=HTTP_HEADERS,
+                        policy=self._policy,
                     )
                     resp.raise_for_status()
                     out = parse_mymemory_response(resp)

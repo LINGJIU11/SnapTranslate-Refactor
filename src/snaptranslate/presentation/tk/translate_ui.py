@@ -21,6 +21,8 @@ class PanelHost(Protocol):
     enable_var: tk.BooleanVar
     floating_var: tk.BooleanVar
     translate_source_var: tk.StringVar
+    proxy_mode_var: tk.StringVar
+    proxy_url_var: tk.StringVar
     tts_volume_var: tk.IntVar
     hotkey_translate_var: tk.StringVar
     hotkey_snip_var: tk.StringVar
@@ -32,6 +34,10 @@ class PanelHost(Protocol):
     def on_enable_toggle(self) -> None: ...
 
     def on_apply_hotkeys(self) -> None: ...
+
+    def on_apply_proxy(self) -> None: ...
+
+    def on_test_proxy(self) -> None: ...
 
     def on_recent_save_click(self, index: int) -> None: ...
 
@@ -47,6 +53,8 @@ class ShellHost(PanelHost, Protocol):
     hotkeys: dict[str, str]
 
     def tts_volume_default(self) -> int: ...
+
+    def proxy_default(self) -> tuple[str, str]: ...
 
 
 __all__ = ["PanelHost", "ShellHost"]

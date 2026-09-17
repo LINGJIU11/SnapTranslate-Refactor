@@ -18,6 +18,7 @@ from typing import Callable
 from snaptranslate.config.theme import (
     UI_BORDER,
     UI_CARD,
+    UI_CHIP,
     UI_LOG_BG,
     UI_STATUS_BG,
     UI_TEXT,
@@ -50,6 +51,7 @@ def build_control_panel(host: PanelHost, master: tk.Misc) -> tk.Frame:
     card.pack(fill="x", pady=(0, 12))
     _build_switches(host, card)
     _build_source(host, card)
+    _build_proxy(host, card)
     _build_hotkeys(host, card)
     _build_tts_volume(host, card)
     _build_recent_translations(host, card)
@@ -60,6 +62,57 @@ def build_control_panel(host: PanelHost, master: tk.Misc) -> tk.Frame:
 
 
 # ———————————————————————————— 分块构建 ————————————————————————————
+
+
+def _build_proxy(host: PanelHost, card: tk.Frame) -> None:
+    """网络代理设置（本轮新增，见 KNOWN_ISSUES.md #25）。
+
+    ``requests`` 不读 Windows 系统代理，所以"开着 Clash 也用不上"；这里把代理做进请求层：
+    三种模式（直连 / 跟随系统 / 自定义）+ 两个常用预设提示 + 一个自检按钮。
+    """
+    wrap = tk.Frame(card, bg=UI_CARD)
+    wrap.pack(fill="x", pady=(14, 0))
+    tk.Label(wrap, text=WindowText.PROXY_LABEL, **SECTION_LABEL_KW).pack(anchor="w")
+
+    row = tk.Frame(wrap, bg=UI_CARD)
+    row.pack(fill="x", pady=(6, 0))
+    rb_kw = dict(
+        bg=UI_CARD,
+        activebackground=UI_CARD,
+        fg=UI_TEXT,
+        selectcolor=UI_CHIP,
+        font=ui_font(10),
+    )
+    for text, value in (
+        (WindowText.PROXY_MODE_OFF, "off"),
+        (WindowText.PROXY_MODE_SYSTEM, "system"),
+        (WindowText.PROXY_MODE_CUSTOM, "custom"),
+    ):
+        tk.Radiobutton(row, text=text, variable=host.proxy_mode_var, value=value, **rb_kw).pack(
+            side="left", padx=(0, 14)
+        )
+
+    edit_row = tk.Frame(wrap, bg=UI_CARD)
+    edit_row.pack(fill="x", pady=(6, 0))
+    tk.Entry(edit_row, textvariable=host.proxy_url_var, **HOTKEY_ENTRY_KW).pack(
+        side="left", fill="x", expand=True
+    )
+    ghost_button(edit_row, text=WindowText.PROXY_APPLY, command=host.on_apply_proxy).pack(
+        side="left", padx=(8, 0)
+    )
+    ghost_button(edit_row, text=WindowText.PROXY_TEST, command=host.on_test_proxy).pack(
+        side="left", padx=(6, 0)
+    )
+
+    tk.Label(
+        wrap,
+        text=WindowText.PROXY_HINT,
+        bg=UI_CARD,
+        fg=UI_TEXT_MUTED,
+        font=ui_font(8),
+        wraplength=SOURCE_HINT_WRAP,
+        justify="left",
+    ).pack(anchor="w", pady=(6, 0))
 
 
 def _build_switches(host: PanelHost, card: tk.Frame) -> None:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from snaptranslate.config.proxy import DEFAULT_MODE, MODES, normalize_proxy_url
 from snaptranslate.domain.models.hotkey import DEFAULT_HOTKEYS, Hotkey, normalize
 from snaptranslate.domain.ports.settings_repository import SettingsRepository
 
@@ -58,6 +59,26 @@ class TranslateSettingsUseCase:
 
     def read_all(self) -> dict[str, Any]:
         return self._repository.read()
+
+    # —— 代理（KNOWN_ISSUES.md #25）——
+
+    def load_proxy(self) -> tuple[str, str]:
+        """读回 ``(mode, url)``；非法值回退"直连"。"""
+        data = self._repository.read()
+        mode = str(data.get("proxy_mode", DEFAULT_MODE) or DEFAULT_MODE).strip().lower()
+        if mode not in MODES:
+            mode = DEFAULT_MODE
+        url = normalize_proxy_url(str(data.get("proxy_url", "") or ""))
+        return mode, url
+
+    def save_proxy(self, mode: str, url: str) -> None:
+        """写失败静默（与其它设置一致，不打断界面操作）。"""
+        try:
+            self._repository.merge(
+                {"proxy_mode": mode if mode in MODES else DEFAULT_MODE, "proxy_url": normalize_proxy_url(url)}
+            )
+        except Exception:
+            pass
 
 
 class ReviewSettingsUseCase:

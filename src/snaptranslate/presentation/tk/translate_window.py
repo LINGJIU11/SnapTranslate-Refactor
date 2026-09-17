@@ -364,6 +364,42 @@ class TranslateApp:
         """``PresenterHost`` 契约：``ResultPresenter.capture_anchor`` 用它取锚点。"""
         return self._cursor_position()
 
+    # ———————————————————————— 代理（KNOWN_ISSUES.md #25）————————————————————————
+
+    def proxy_default(self) -> tuple[str, str]:
+        """窗口壳创建变量时用：当前生效的模式与地址。"""
+        policy = self.deps.proxy_policy
+        return (policy.mode, policy.url)
+
+    def on_apply_proxy(self) -> None:
+        """把界面上的选择写进策略与设置——翻译请求下一次调用立即生效。"""
+        if self.proxy_mode_var is None or self.proxy_url_var is None:
+            return
+        mode = self.proxy_mode_var.get()
+        url = self.proxy_url_var.get()
+        self.deps.proxy_policy.configure(mode, url)
+        self.deps.settings.save_proxy(mode, url)
+        if self.status_var is not None:
+            self.status_var.set(WindowText.PROXY_APPLIED.format(detail=self.deps.proxy_policy.describe()))
+
+    def on_test_proxy(self) -> None:
+        """代理自检（网络调用放线程里，结果回状态栏）。"""
+        if self.status_var is not None:
+            self.status_var.set(WindowText.PROXY_TESTING)
+        probe = self.deps.proxy_probe
+        root = self.root
+
+        def worker() -> None:
+            try:
+                _ok, detail = probe("https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=zh-CN&q=test")
+            except Exception as exc:  # noqa: BLE001
+                detail = f"{type(exc).__name__}: {exc}"
+            message = WindowText.PROXY_TEST_RESULT.format(detail=detail)
+            if root is not None:
+                root.after(0, lambda: self.status_var and self.status_var.set(message))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     @staticmethod
     def _log_line(message: str) -> None:
         """控制台日志，格式与原版 ``print(f"[{time.strftime('%H:%M:%S')}] ...")`` 一致。"""

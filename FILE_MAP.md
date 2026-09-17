@@ -134,6 +134,7 @@
 | `presentation/texts.py` | 全部界面文案的唯一出口 |
 | `presentation/tk/translate_sink.py`、`app_events.py` | 线程安全的结果出口 + 热键→线程→用例编排（含"触发瞬间取锚点"） |
 | `infrastructure/input/win32_pointer.py`、`win32_input_watcher.py` | 鼠标位置（`GetCursorPos`）与"任意键/鼠标键按下"监听（浮层锚点与关闭，见 KNOWN_ISSUES #23/#24） |
+| `infrastructure/network/`（3 个）、`config/proxy.py`、`domain/ports/proxy.py` | 代理：系统代理读取、代理策略（直连/跟随系统/自定义）、带失败回退的 HTTP GET（见 KNOWN_ISSUES #25） |
 | `presentation/tk/translate_ui.py` | 面板与窗口壳的 Protocol 契约 |
 | `bootstrap/container.py` / `wiring.py` / `cli.py` / `streamlit_entry.py` | 组合根与四类进程入口 |
 | `scripts/*.py`（6 个） | 分层校验 / 对拍 / 冒烟 / Tk 冒烟 / Web 结构对拍 / 一键全跑 |

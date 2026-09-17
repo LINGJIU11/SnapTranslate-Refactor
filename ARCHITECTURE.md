@@ -60,7 +60,7 @@
   - `scoring.py`：`DEFAULT_SCORE / SCORE_MIN / SCORE_MAX / GRADE_DELTA`、`item_score`、`normalize_scores`、`apply_grade`。
   - `review_session.py`：复习会话状态机（顺序构建、当前位置、推进、评分），桌面端与 Web 端**共用同一实现**。
   - `text_cleaning.py`：`clean_text`、`is_likely_english`、`truncate`。
-- `ports/`：`translator.py`、`ocr.py`、`tts.py`、`vocabulary_repository.py`、`settings_repository.py`、`api_key_store.py`、`backup_writer.py`、`clipboard.py`（含 `sequence()` 剪贴板版本号）、`selection_reader.py`（返回 `SelectionCapture`，见 §4.7）、`hotkey_listener.py`（含 `update_bindings()` 热更新）、`pointer.py`（鼠标位置，线程安全）、`input_watcher.py`（"任意键/鼠标键按下"监听，用于关闭浮层）、`example_generator.py`、`clock.py`、`window.py`、`error_formatter.py`。
+- `ports/`：`translator.py`、`ocr.py`、`tts.py`、`vocabulary_repository.py`、`settings_repository.py`、`api_key_store.py`、`backup_writer.py`、`clipboard.py`（含 `sequence()` 剪贴板版本号）、`selection_reader.py`（返回 `SelectionCapture`，见 §4.7）、`hotkey_listener.py`（含 `update_bindings()` 热更新）、`pointer.py`（鼠标位置，线程安全）、`input_watcher.py`（"任意键/鼠标键按下"监听，用于关闭浮层）、`proxy.py`（代理设置）、`example_generator.py`、`clock.py`、`window.py`、`error_formatter.py`。
 - `errors.py`：`SnapTranslateError` 及领域错误（`TranslationError`、`OcrError`、`VocabularyIoError`、`ExampleGenerationError`）。
 
 ### 2.3 `infrastructure/` — 基础设施层（适配器实现端口）
@@ -154,6 +154,10 @@ SnapTranslate重构/
    卡片以"热键按下那一刻"的鼠标位置显示，之后用户移动鼠标不影响结果落点。
 9. **浮层的"生命周期"由输入驱动**（F5）：`InputWatcher` 端口监听"任意键/鼠标左右键"，
    卡片显示后一直保留到用户下一次输入；启动时已按下的键被忽略（否则热键里的 Alt 会把卡片立刻关掉）。
+10. **所有出网请求走同一个口子**（F6）：`infrastructure/network/http.py:get()` 统一处理
+    `trust_env=False`（不猜环境变量）+ 显式 `proxies`（由 `ProxyPolicy` 按主机决定）+
+    **代理失败自动回退直连**。内网/回环地址永远直连，翻译引擎只是"要一个 URL"，
+    不关心代理存在与否。
 
 ## 5. 验证策略
 

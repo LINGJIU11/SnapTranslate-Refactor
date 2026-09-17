@@ -105,6 +105,27 @@ def check_floating_card(app, root) -> None:
     check("关闭后输入监听停止", not app.deps.input_watcher.is_running())
 
 
+def check_proxy_row(app) -> None:
+    """代理设置行的端到端检查：界面改完 → 策略即时生效 + 落盘（KNOWN_ISSUES.md #25）。"""
+    policy = app.deps.proxy_policy
+    original = (policy.mode, policy.url)
+    try:
+        app.proxy_mode_var.set("custom")
+        app.proxy_url_var.set("127.0.0.1:7897")
+        app.on_apply_proxy()
+        check(
+            "界面改代理后策略即时生效",
+            policy.mode == "custom" and policy.effective_url() == "http://127.0.0.1:7897",
+            f"{policy.mode} {policy.effective_url()}",
+        )
+        saved = app.deps.settings.load_proxy()
+        check("代理设置已落盘", saved == ("custom", "http://127.0.0.1:7897"), f"{saved}")
+    finally:
+        app.proxy_mode_var.set(original[0])
+        app.proxy_url_var.set(original[1])
+        app.on_apply_proxy()
+
+
 def check_with_tk() -> None:
     print("\n=== 2. 真实 Tk 构造（--with-tk） ===")
     try:
@@ -158,6 +179,7 @@ def check_with_tk() -> None:
                 check("改热键后监听器即时同步（无需重启）", False, f"{type(exc).__name__}: {exc}")
 
             check_floating_card(app, root)
+            check_proxy_row(app)
 
         if isinstance(root, tk.Misc):
             try:

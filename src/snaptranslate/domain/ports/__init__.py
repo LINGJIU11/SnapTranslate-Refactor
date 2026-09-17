@@ -15,6 +15,7 @@ from snaptranslate.domain.ports.hotkey_listener import HotkeyBindings, HotkeyCal
 from snaptranslate.domain.ports.input_watcher import InputWatcher
 from snaptranslate.domain.ports.ocr import OcrEngine, OcrStage, StageCallback
 from snaptranslate.domain.ports.pointer import Pointer
+from snaptranslate.domain.ports.proxy import ProxySettings
 from snaptranslate.domain.ports.selection_reader import SelectionReader
 from snaptranslate.domain.ports.settings_repository import SettingsRepository
 from snaptranslate.domain.ports.translator import Translator
@@ -36,6 +37,7 @@ __all__ = [
     "OcrEngine",
     "OcrStage",
     "Pointer",
+    "ProxySettings",
     "SelectionReader",
     "SettingsRepository",
     "StageCallback",
