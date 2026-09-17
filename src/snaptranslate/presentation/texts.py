@@ -139,6 +139,18 @@ class WindowText:
             "聚焦地址栏）；② 该区域禁止复制（PDF 阅读器、图片、跨域 iframe）；③ 选区已丢失。"
         )
 
+    @staticmethod
+    def capture_modifier_hint(hotkey_label: str) -> str:
+        """取词失败、且热键里的 Alt/Shift/Win 一直按着时的提示（KNOWN_ISSUES #22）。
+
+        实测结论：Alt 还按着时注入的 Ctrl+C 会被目标程序当成 Ctrl+Alt+C，复制不会发生。
+        """
+        return (
+            f"取词失败：{hotkey_label} 里的修饰键（Alt/Shift/Win）在复制瞬间仍按着，"
+            "Ctrl+C 被系统当成了别的组合键，所以没有取到文本（已放弃翻译）。"
+            "请松开修饰键再按一次；或把翻译热键改成 Ctrl 组合（例如 ctrl+f9）最稳。"
+        )
+
     #: 原 ``main.py:1171`` 传给 ``_translate_text_job`` 的 ``no_text_hint``
     NO_SNIP_TEXT_HINT = "截图区域未识别到文字，请重试更清晰区域"
 

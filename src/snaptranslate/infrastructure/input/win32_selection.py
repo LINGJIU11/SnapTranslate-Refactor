@@ -1,19 +1,22 @@
 """取词适配器：模拟 Ctrl+C 后读剪贴板（原 ``main.py:949-964``）。
 
-**本文件修掉了一个原版会误导用户的缺陷**（见 KNOWN_ISSUES.md #20）：
+本文件修掉了原版两个会误导用户的缺陷（见 KNOWN_ISSUES.md #20、#22）：
 
-原版只看"剪贴板内容有没有变"，内容没变时**不报错**，直接把剪贴板里的旧内容当原文去翻译。
-于是当 Ctrl+C 没有真正生效（浏览器抢了快捷键、选区丢失、该区域禁止复制……）时，用户会看到
-"上次复制过的网址 => 同一个网址"这种莫名其妙的结果，而且毫无提示。
+**F1（#20）失败被当成成功**：原版只比较"剪贴板内容有没有变"，没变时不报错，
+直接把剪贴板里的旧内容当原文翻译 —— 于是"上次复制的网址 => 同一个网址"。
+现在用**剪贴板版本号**判断是否真的发生了一次复制，失败就明确返回 ``copied=False``。
 
-现在的判据是**剪贴板版本号**（``GetClipboardSequenceNumber``）：只要真的发生了一次复制，
-版本号必然变化，即使复制到的文本和旧内容一模一样。判据失效（版本号不可用，返回 0）时，
-自动退回原来的"内容比对"，保持旧行为。
+**F3（#22）热键里的修饰键"毒化"注入的 Ctrl+C**：监听器在热键按下那一刻就注入 Ctrl+C，
+若热键是 Alt+Z 而手还没松开 Alt，目标程序看到的是 **Ctrl+Alt+C**（不是复制），
+剪贴板毫无变化 → 取词必然失败（受控实验：按住 Alt 时 4/4 失败，按住 Ctrl 时全部成功）。
+现在注入前先等 Alt/Shift/Win 松开（Ctrl 除外，它本来就是 Ctrl+C 的一部分），
+并且每次按键之间留一点间隔，避免目标程序处理到 C 键时异步键态已经变化。
 """
 
 from __future__ import annotations
 
 import ctypes
+import time
 
 from snaptranslate.domain.models.selection import SelectionCapture
 from snaptranslate.domain.ports.clipboard import Clipboard
@@ -21,14 +24,25 @@ from snaptranslate.domain.ports.clock import Clock
 from snaptranslate.domain.services.text_cleaning import clean_text
 from snaptranslate.infrastructure.system_clock import SystemClock
 
+VK_SHIFT = 0x10
 VK_CTRL = 0x11
+VK_ALT = 0x12
 VK_C = 0x43
+VK_LWIN = 0x5B
+VK_RWIN = 0x5C
 KEYEVENTF_KEYUP = 0x0002
 
 #: 原 ``main.py:42-43``：复制后等待与轮询间隔
 COPY_DELAY_SEC = 0.06
 CLIPBOARD_STABLE_WAIT = 0.03
 STABLE_POLL_TIMES = 8
+#: 注入 Ctrl+C 时每次按键之间的间隔（原版是零延迟）
+KEY_GAP_SEC = 0.015
+#: 等待修饰键松开的上限；超时也照样尝试（失败会被如实报出来）
+MODIFIER_RELEASE_TIMEOUT_SEC = 0.6
+
+#: 会"毒化" Ctrl+C 的修饰键；**故意不含 Ctrl**（Ctrl+C 需要它）
+POISONING_MODIFIER_VKS: tuple[int, ...] = (VK_SHIFT, VK_ALT, VK_LWIN, VK_RWIN)
 
 
 class Win32SelectionReader:
@@ -43,6 +57,8 @@ class Win32SelectionReader:
         copy_delay: float = COPY_DELAY_SEC,
         stable_wait: float = CLIPBOARD_STABLE_WAIT,
         poll_times: int = STABLE_POLL_TIMES,
+        key_gap: float = KEY_GAP_SEC,
+        release_timeout: float = MODIFIER_RELEASE_TIMEOUT_SEC,
     ) -> None:
         self._clipboard = clipboard
         self._user32 = user32 if user32 is not None else ctypes.windll.user32
@@ -50,8 +66,13 @@ class Win32SelectionReader:
         self._copy_delay = copy_delay
         self._stable_wait = stable_wait
         self._poll_times = poll_times
+        self._key_gap = key_gap
+        self._release_timeout = release_timeout
 
     def read_selected_text(self) -> SelectionCapture:
+        # 先等修饰键松开：热键是 Alt+Z 时，手还没松开的 Alt 会让注入的 Ctrl+C 变成 Ctrl+Alt+C
+        modifiers_released = self._wait_for_modifiers_released()
+
         before_text = self._clipboard.read_text()
         before_seq = self._clipboard.sequence()
 
@@ -72,9 +93,15 @@ class Win32SelectionReader:
                     break
 
         if not copied:
-            return SelectionCapture(text="", copied=False, clipboard_text=before_text)
+            return SelectionCapture(
+                text="",
+                copied=False,
+                clipboard_text=before_text,
+                modifiers_held=not modifiers_released,
+            )
         return SelectionCapture(text=clean_text(after_text), copied=True)
 
+    # —— 内部 ——
     @staticmethod
     def _copied(before_seq: int, after_seq: int, before_text: str, after_text: str) -> bool:
         """是否真的发生了一次复制。
@@ -85,9 +112,33 @@ class Win32SelectionReader:
             return before_seq != after_seq
         return before_text != after_text
 
+    def _modifiers_down(self) -> bool:
+        for vk in POISONING_MODIFIER_VKS:
+            try:
+                if self._user32.GetAsyncKeyState(vk) & 0x8000:
+                    return True
+            except Exception:
+                return False  # 取不到键态（例如非 Windows）就不等
+        return False
+
+    def _wait_for_modifiers_released(self) -> bool:
+        """等 Alt/Shift/Win 全部松开；返回是否等到了（超时返回 False）。"""
+        if not self._modifiers_down():
+            return True
+        deadline = time.monotonic() + self._release_timeout
+        while time.monotonic() < deadline:
+            self._clock.sleep(0.01)
+            if not self._modifiers_down():
+                return True
+        return False
+
     def _send_ctrl_c(self) -> None:
         user32 = self._user32
+        gap = self._key_gap
         user32.keybd_event(VK_CTRL, 0, 0, 0)
+        self._clock.sleep(gap)
         user32.keybd_event(VK_C, 0, 0, 0)
+        self._clock.sleep(gap)
         user32.keybd_event(VK_C, 0, KEYEVENTF_KEYUP, 0)
+        self._clock.sleep(gap)
         user32.keybd_event(VK_CTRL, 0, KEYEVENTF_KEYUP, 0)

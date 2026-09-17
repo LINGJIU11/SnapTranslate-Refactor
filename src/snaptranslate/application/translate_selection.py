@@ -29,15 +29,17 @@ class TranslateSelectionUseCase:
         progress: ProgressReporter,
         no_text_hint: str,
         capture_failed_hint: str = "",
+        modifier_hint: str = "",
     ) -> TranslationOutcome:
         progress.cursor(Stage.READING_SELECTION)
         capture = self._selection_reader.read_selected_text()
         if not capture.copied:
             # 剪贴板没有变化 = 这次 Ctrl+C 没生效。**不要把 clipboard_text 当原文**
             progress.cursor(Stage.CAPTURE_FAILED)
+            hint = modifier_hint if (capture.modifiers_held and modifier_hint) else capture_failed_hint
             return TranslationOutcome(
                 kind=OutcomeKind.NO_TEXT,
-                error_message=capture_failed_hint or no_text_hint,
+                error_message=hint or no_text_hint,
                 capture_failed=True,
             )
         return self._translate_text.execute(capture.text, progress=progress, no_text_hint=no_text_hint)

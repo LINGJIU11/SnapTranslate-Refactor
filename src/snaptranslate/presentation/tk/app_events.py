@@ -122,6 +122,7 @@ class TranslateJobRunner:
             progress=self._progress_reporter(),
             no_text_hint=WindowText.no_selection_hint(self._sink.hotkey_label(ACTION_TRANSLATE)),
             capture_failed_hint=WindowText.capture_failed_hint(self._sink.hotkey_label(ACTION_TRANSLATE)),
+            modifier_hint=WindowText.capture_modifier_hint(self._sink.hotkey_label(ACTION_TRANSLATE)),
         )
         self._sink.post_status_reset()
         self.handle_outcome(outcome)

@@ -23,6 +23,8 @@ class SelectionCapture:
     copied: bool
     #: 取词失败时保留当时的剪贴板内容，仅用于日志/诊断，**绝不参与翻译**
     clipboard_text: str = ""
+    #: 失败时，热键里的 Alt/Shift/Win 是否一直按着（这是"Ctrl+C 变 Ctrl+Alt+C"的直接原因）
+    modifiers_held: bool = False
 
     @property
     def usable(self) -> bool:

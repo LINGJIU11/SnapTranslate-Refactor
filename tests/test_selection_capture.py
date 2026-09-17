@@ -1,13 +1,23 @@
-"""取词适配器测试——**核心回归**：Ctrl+C 未生效时不得把剪贴板旧内容当原文。
+"""取词适配器测试。
 
-对应 bug：划词翻译"返回了上次复制的网址"（KNOWN_ISSUES.md #20）。
+覆盖三件必须成立的事：
+
+1. **Ctrl+C 未生效时不得把剪贴板旧内容当原文**（KNOWN_ISSUES #20 的回归）；
+2. **热键里的 Alt/Shift/Win 按着时先等它松开再注入**（KNOWN_ISSUES #22 的回归）；
+3. 注入 Ctrl+C 时按键之间留间隔，并把"修饰键一直按着"如实带回给调用方。
 """
 
 from __future__ import annotations
 
 import unittest
 
-from snaptranslate.infrastructure.input.win32_selection import Win32SelectionReader
+from snaptranslate.infrastructure.input.win32_selection import (
+    KEY_GAP_SEC,
+    VK_ALT,
+    VK_CTRL,
+    VK_SHIFT,
+    Win32SelectionReader,
+)
 
 
 class FakeClipboard:
@@ -43,21 +53,69 @@ class FakeClipboard:
 
 
 class FakeUser32:
-    """按键照发；``on_ctrl_c`` 决定目标应用是否真的响应了复制。"""
+    """可控按键状态 + 可控复制响应。
 
-    def __init__(self, on_ctrl_c=None) -> None:
+    - ``pressed``：当前按下的虚拟键码（模拟"手还按着 Alt"）；
+    - ``release_after_checks``：第 N 次查询键态之后自动松开（模拟人手松开）；
+    - ``on_ctrl_c``：目标应用是否真的响应了这次 Ctrl+C；
+    - ``timeline``：记录 check/key 事件，用于断言"先等松开、再注入"。
+    """
+
+    def __init__(self, on_ctrl_c=None, pressed=(), release_after_checks: int | None = None) -> None:
         self._on_ctrl_c = on_ctrl_c
+        self.pressed = set(pressed)
+        self.release_after_checks = release_after_checks
+        self.checks = 0
         self.events = 0
+        self.timeline: list[tuple[str, int, bool]] = []
 
-    def keybd_event(self, *args) -> None:
+    def GetAsyncKeyState(self, vk: int) -> int:
+        self.checks += 1
+        if self.release_after_checks is not None and self.checks > self.release_after_checks:
+            self.pressed.discard(vk)
+        down = vk in self.pressed
+        self.timeline.append(("check", vk, down))
+        return 0x8000 if down else 0
+
+    def keybd_event(self, vk: int, scan: int, flags: int, extra: int) -> None:
         self.events += 1
-        # 一组是 4 次调用（ctrl↓、c↓、c↑、ctrl↑），在第 3 次时模拟复制完成
+        self.timeline.append(("key", vk, bool(flags)))
         if self.events % 4 == 3 and self._on_ctrl_c is not None:
             self._on_ctrl_c()
 
+    # —— 断言辅助 ——
+    def first_key_index(self) -> int:
+        for index, (kind, _vk, _flag) in enumerate(self.timeline):
+            if kind == "key":
+                return index
+        return -1
 
-def _reader(clipboard: FakeClipboard, user32: FakeUser32) -> Win32SelectionReader:
-    return Win32SelectionReader(clipboard, user32=user32, copy_delay=0.0, stable_wait=0.0)
+    def last_modifier_down_index(self) -> int:
+        for index in range(len(self.timeline) - 1, -1, -1):
+            kind, vk, down = self.timeline[index]
+            if kind == "check" and down and vk in (VK_ALT, VK_SHIFT):
+                return index
+        return -1
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.sleeps: list[float] = []
+
+    def stamp(self) -> str:
+        return "2026-09-17_00-00-00"
+
+    def log_time(self) -> str:
+        return "00:00:00"
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+
+
+def _reader(clipboard: FakeClipboard, user32: FakeUser32, **kwargs) -> Win32SelectionReader:
+    kwargs.setdefault("copy_delay", 0.0)
+    kwargs.setdefault("stable_wait", 0.0)
+    return Win32SelectionReader(clipboard, user32=user32, **kwargs)
 
 
 class CopySucceededTests(unittest.TestCase):
@@ -99,7 +157,7 @@ class CopySucceededTests(unittest.TestCase):
 
 
 class CopyFailedTests(unittest.TestCase):
-    """本次修复的核心：失败必须被识别出来，且**不得**返回剪贴板旧内容。"""
+    """KNOWN_ISSUES #20 的核心：失败必须被识别出来，且**不得**返回剪贴板旧内容。"""
 
     URL = "https://code.visualstudio.com/updates/v1_138"
 
@@ -128,6 +186,56 @@ class CopyFailedTests(unittest.TestCase):
         capture = _reader(changed, user32).read_selected_text()
         self.assertTrue(capture.copied)
         self.assertEqual(capture.text, "新内容")
+
+
+class ModifierReleaseTests(unittest.TestCase):
+    """KNOWN_ISSUES #22：热键里的 Alt/Shift/Win 会"毒化"注入的 Ctrl+C。"""
+
+    def test_waits_for_alt_release_before_injecting(self) -> None:
+        clipboard = FakeClipboard("旧内容", sequence=1)
+        user32 = FakeUser32(
+            lambda: clipboard.simulate_copy("Selected text"),
+            pressed=(VK_ALT,),
+            release_after_checks=3,
+        )
+        clock = FakeClock()
+        capture = _reader(clipboard, user32, clock=clock).read_selected_text()
+
+        self.assertTrue(capture.copied)
+        self.assertEqual(capture.text, "Selected text")
+        # 注入的按键必须发生在"最后一次检测到修饰键仍按着"之后
+        self.assertGreater(user32.first_key_index(), user32.last_modifier_down_index())
+
+    def test_modifier_never_released_is_reported(self) -> None:
+        """一直按着 Alt（等超时）：照旧尝试，但要把"修饰键按着"如实带回来。"""
+        clipboard = FakeClipboard("旧内容", sequence=1)
+        user32 = FakeUser32(pressed=(VK_ALT,))
+        capture = _reader(clipboard, user32, release_timeout=0.05).read_selected_text()
+        self.assertFalse(capture.copied)
+        self.assertTrue(capture.modifiers_held)
+
+    def test_no_modifier_means_no_wait(self) -> None:
+        clipboard = FakeClipboard("旧内容", sequence=1)
+        user32 = FakeUser32(lambda: clipboard.simulate_copy("ok"))
+        clock = FakeClock()
+        _reader(clipboard, user32, clock=clock).read_selected_text()
+        # 没按修饰键时不能出现"等松开"的 10ms 轮询：只应有 3 次注入间隔 + 1 次复制后等待
+        self.assertEqual(clock.sleeps, [KEY_GAP_SEC, KEY_GAP_SEC, KEY_GAP_SEC, 0.0])
+
+    def test_injection_has_gaps_between_keystrokes(self) -> None:
+        clipboard = FakeClipboard("旧内容", sequence=1)
+        user32 = FakeUser32(lambda: clipboard.simulate_copy("ok"))
+        clock = FakeClock()
+        _reader(clipboard, user32, clock=clock).read_selected_text()
+        self.assertEqual(clock.sleeps.count(KEY_GAP_SEC), 3)
+
+    def test_ctrl_is_not_treated_as_poisoning_modifier(self) -> None:
+        """Ctrl 本来就该按着（Ctrl+C 需要它），不能被当成"修饰键未松开"而空等。"""
+        clipboard = FakeClipboard("旧内容", sequence=1)
+        user32 = FakeUser32(lambda: clipboard.simulate_copy("selected"), pressed=(VK_CTRL,))
+        capture = _reader(clipboard, user32).read_selected_text()
+        self.assertTrue(capture.copied)
+        self.assertFalse(capture.modifiers_held)
 
 
 class SelectionCaptureTests(unittest.TestCase):
