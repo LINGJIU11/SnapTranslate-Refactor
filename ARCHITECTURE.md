@@ -55,7 +55,7 @@
 - `models/`
   - `vocab_entry.py`：`VocabEntry`（对原始 dict 的**强类型视图**，保留未知字段与键序）、`Vocabulary`（词条集合，封装增删查与"待补例句"统计）。
   - `review.py`：`SortMode`、`Grade`、`RevealState` 等枚举与值对象。
-  - `translation.py`：`TranslationResult`（干净译文 + 引擎标签 + `display_text`）、`BBox`、`Language`。
+  - `translation.py`：`TranslationResult`（干净译文 `text` + 引擎标签 `engine_label` + 日志文本 `display_text` + 卡片文本 `card_text`；标签**只进日志**，见 §4.8）、`BBox`、`Language`。
   - `hotkey.py`：`Hotkey`（解析 `ctrl+l` / `tab+q` 这类组合，纯字符串规则）。
 - `services/`
   - `scoring.py`：`DEFAULT_SCORE / SCORE_MIN / SCORE_MAX / GRADE_DELTA`、`item_score`、`normalize_scores`、`apply_grade`。
@@ -65,7 +65,9 @@
 - `errors.py`：`SnapTranslateError` 及领域错误（`TranslationError`、`OcrError`、`VocabularyIoError`、`ExampleGenerationError`）。
 
 ### 2.3 `infrastructure/` — 基础设施层（适配器实现端口）
-- `translation/`：`google_gtx.py`、`google_clients5.py`、`mymemory.py`、`lingva.py`、`racing.py`（并发竞速策略）、`cache.py`（进程内 OrderedDict 缓存）、`errors.py`（失败文案格式化）、`factory.py`。
+- `translation/`：`policy.py`（超时/重试/并发上限 `RACE_MAX_WORKERS=2`/线路标签）、`google.py`（仅 clients5）、`mymemory.py`、`racing.py`（两路并发竞速：clients5 + MyMemory）、`cache.py`（进程内 OrderedDict 缓存）、`errors.py`（失败文案格式化）、`factory.py`。
+  - 历史说明：原版的 gtx 与 Lingva 两条线路已删除（gtx 实测 HTTP 429、Lingva 被 Cloudflare 403，直连与代理下均失效），
+    因此竞速从 5 路降为 2 路；对拍脚本只比对**日志文本**，删除线路不影响对拍基线中对"标签文案"的断言。
 - `ocr/tesseract.py`：屏幕截取 + Tesseract 识别 + 语言包探测 + `TESSDATA_PREFIX` 处理。
 - `tts/windows_sapi.py`：PowerShell + `System.Speech` 朗读（阻塞/异步两种，与原版超时参数一致）。
 - `persistence/`：`json_vocabulary.py`（三种加载语义见 §4）、`json_settings.py`、`api_key_file.py`、`backup.py`。
@@ -145,7 +147,9 @@ SnapTranslate重构/
    - `load_tolerant()`：过滤非 dict 元素，出错返回 `[]`（原 `vocab_review.py` / `vocab_review_web.py`）；
    - `load_strict()`：读取失败或顶层非 list **抛异常**（原 `set.py`）。
 3. **设置写入语义同样显式区分**：`merge(patch)`（原 `main.py`，保留其它键）与 `replace(payload)`（原 `vocab_review.py`，整体覆盖并在失败时删临时文件）。
-4. **翻译竞速的"引擎标签"与缓存短路语义原样保留**：命中缓存时**不带**引擎标签，未命中竞速才带——这决定了界面上是否出现"（Google 最快返回）"，也决定了原版把标签写进生词本的行为，本轮**不改**（见 `KNOWN_ISSUES.md`）。
+4. **翻译竞速的"引擎标签"与缓存短路语义原样保留**：命中缓存时**不带**引擎标签，未命中竞速才带。
+   阶段一不改；阶段一之后的 F8 只把标签**从卡片移进日志**（`display_text` 带标签、`card_text` 干净），
+   缓存短路口径与日志文案完全不变（`KNOWN_ISSUES.md` §五 F8）。
 5. **两端复习界面共用 `ReviewSession`**：原版桌面端与 Web 端各写了一份顺序/评分/推进逻辑，现收敛为领域服务，两端只做渲染。
 6. **唯一的新增能力**：数据目录可用环境变量 `SNAPTRANSLATE_DATA_DIR` 覆盖（默认值与"脚本同目录"完全一致，不设该变量时行为不变）。
 7. **取词结果必须能区分"取到了"与"没取到"**（阶段一之后的修复，见 `KNOWN_ISSUES.md` §五 F1）：
@@ -160,6 +164,13 @@ SnapTranslate重构/
     `trust_env=False`（不猜环境变量）+ 显式 `proxies`（由 `ProxyPolicy` 按主机决定）+
     **代理失败自动回退直连**。内网/回环地址永远直连，翻译引擎只是"要一个 URL"，
     不关心代理存在与否。
+11. **失效线路直接删除，而不是留着兜底**（F7）：`RacingTranslator` 显式接收两条线路
+    （clients5 + MyMemory），`policy.RACE_MAX_WORKERS = 2`。删除判据是**实测**：
+    gtx 直连/代理均 HTTP 429，Lingva 直连/代理均 HTTP 403——留着只会占用并发与配额预算。
+    同时暴露 `line_names` 供自检打印，避免"线路悄悄少一条没人发现"。
+12. **同一份结果，两种呈现口径**（F8）：`TranslationResult.display_text`（带 `（X 最快返回）`）
+    给日志/翻译记录/对拍，`card_text`（干净译文）给浮层与"收录生词本"。
+    也就是说**可观测性不牺牲用户界面**：想知道谁返回的，看控制台与翻译记录。
 
 ## 5. 验证策略
 

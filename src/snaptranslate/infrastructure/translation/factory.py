@@ -2,6 +2,9 @@
 
 对应原版 ``main.py:584-590``（``translate``）与 ``611-615``（``_translate_resilient``）：
 选择 ``mymemory`` 时只用 MyMemory 单接口；否则走"自动竞速"。
+
+**线路已被裁剪**（F7，见 KNOWN_ISSUES.md §五）：竞速只剩 clients5 + MyMemory 两条，
+原版另有 gtx 与两个 Lingva 镜像——实测前者稳定 429、后者被 Cloudflare 挡 403。
 """
 
 from __future__ import annotations
@@ -9,10 +12,8 @@ from __future__ import annotations
 from snaptranslate.domain.ports.translator import Translator
 from snaptranslate.infrastructure.network.proxy_policy import ProxyPolicy
 from snaptranslate.infrastructure.translation.cache import TranslationCache
-from snaptranslate.infrastructure.translation.google import GoogleClients5Translator, GoogleGtxTranslator
-from snaptranslate.infrastructure.translation.lingva import LingvaTranslator
+from snaptranslate.infrastructure.translation.google import GoogleClients5Translator
 from snaptranslate.infrastructure.translation.mymemory import MyMemoryTranslator
-from snaptranslate.infrastructure.translation.policy import LINGVA_BASES
 from snaptranslate.infrastructure.translation.racing import RacingTranslator
 
 #: 原版单选值：``google`` = 自动竞速（默认），``mymemory`` = 仅 MyMemory
@@ -25,16 +26,12 @@ def build_racing_translator(
     cache: TranslationCache,
     *,
     policy: ProxyPolicy | None = None,
-    lingva_bases: tuple[str, ...] = LINGVA_BASES,
 ) -> RacingTranslator:
-    """构造"Google 双线路 + MyMemory + Lingva 镜像"竞速器（都按 ``policy`` 决定是否走代理）。"""
-    lingvas = [LingvaTranslator(base, cache, policy=policy) for base in lingva_bases]
+    """构造"clients5 + MyMemory"竞速器（都按 ``policy`` 决定是否走代理）。"""
     return RacingTranslator(
         cache,
-        GoogleGtxTranslator(cache, policy=policy),
         GoogleClients5Translator(cache, policy=policy),
         MyMemoryTranslator(cache, policy=policy),
-        lingvas,
     )
 
 

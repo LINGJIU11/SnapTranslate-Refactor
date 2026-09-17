@@ -36,7 +36,15 @@ class TranslationResult:
 
     @property
     def display_text(self) -> str:
-        """界面展示文本：与 ``main.py:989`` 的拼接规则完全一致。"""
+        """**日志与控制台**用的文本：带引擎标签（原 ``main.py:989`` 的拼接规则）。"""
         if self.engine_label:
             return f"{self.text}\n（{self.engine_label} 最快返回）"
+        return self.text
+
+    @property
+    def card_text(self) -> str:
+        """**悬浮卡片**用的文本：只有干净译文，不带"（X 最快返回）"标签（见 KNOWN_ISSUES.md §五 F8）。
+
+        用户要求：标签只出现在日志里，不干扰卡片上的阅读。
+        """
         return self.text

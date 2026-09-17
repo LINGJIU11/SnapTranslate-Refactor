@@ -9,15 +9,15 @@
 
 | 层级 | 目录 | 文件 | 行数 | 职责 | 允许依赖 |
 |---|---|---|---|---|---|
-| L0 配置 | `src/snaptranslate/config/` | 4 | 98 | 路径解析、主题色、应用元信息 | 仅标准库 |
-| L1 领域 | `src/snaptranslate/domain/` | 27 | 785 | 模型、领域服务、端口 Protocol、错误 | 标准库 + domain |
-| L2 基础设施 | `src/snaptranslate/infrastructure/` | 28 | 1235 | 5 条翻译线路与竞速、Tesseract OCR、SAPI 朗读、JSON 持久化、Win32 输入、DeepSeek | + config |
-| L3 应用 | `src/snaptranslate/application/` | 14 | 737 | 8 个用例 + 依赖包 + 进度/结果 DTO | + domain、config |
-| L4 表示 | `src/snaptranslate/presentation/` | 32 | 3720 | 文案总表 + Tk（`tk/` 24 文件）+ Streamlit（`web/` 6 文件） | + application |
-| L5 组装 | `src/snaptranslate/bootstrap/` | 5 | 271 | 容器（唯一装配点）、装配函数、CLI/Streamlit 进程入口 | 全部 |
-| — | 主包合计 | **111** | **6854** | | |
+| L0 配置 | `src/snaptranslate/config/` | 5 | 116 | 路径解析、主题色、应用元信息、代理模式与预设 | 仅标准库 |
+| L1 领域 | `src/snaptranslate/domain/` | 31 | 878 | 模型、领域服务、17 个端口 Protocol、错误 | 标准库 + domain |
+| L2 基础设施 | `src/snaptranslate/infrastructure/` | 33 | 1529 | 2 条翻译线路（clients5 + MyMemory）与竞速、代理/HTTP 出口、Tesseract OCR、SAPI 朗读、JSON 持久化、Win32 输入、DeepSeek | + config |
+| L3 应用 | `src/snaptranslate/application/` | 14 | 784 | 8 个用例 + 依赖包 + 进度/结果 DTO | + domain、config |
+| L4 表示 | `src/snaptranslate/presentation/` | 32 | 3954 | 文案总表 + Tk（`tk/` 24 文件）+ Streamlit（`web/` 6 文件） | + application |
+| L5 组装 | `src/snaptranslate/bootstrap/` | 5 | 291 | 容器（唯一装配点）、装配函数、CLI/Streamlit 进程入口 | 全部 |
+| — | 主包合计 | **120** | **7552** | | |
 
-外围：`entrypoints/`（4 个兼容入口）、`scripts/`（6 个门禁脚本）、`tests/`（13 个文件 / 160 项测试）。
+外围：`entrypoints/`（4 个兼容入口）、`scripts/`（6 个门禁 + 2 个诊断脚本）、`tests/`（18 个文件 / 211 项测试）。
 
 粒度：单文件 60–300 行、单文件单职责。**唯一例外**是 `presentation/texts.py`（321 行，全部界面文案的唯一出口），已在 `ARCHITECTURE.md §3` 登记。
 
@@ -27,13 +27,13 @@
 
 | 原版位置 | 内容 | 新位置 |
 |---|---|---|
-| 44-99 | `MAX_TEXT_LENGTH`、超时/重试、Lingva 列表、HTTP 头、Tesseract 路径 | `domain/services/text_cleaning.py`、`infrastructure/translation/policy.py`、`config/paths.py` |
+| 44-99 | `MAX_TEXT_LENGTH`、超时/重试、HTTP 头、Tesseract 路径 | `domain/services/text_cleaning.py`、`infrastructure/translation/policy.py`、`config/paths.py` |
 | 57-76 | 翻译结果内存缓存（OrderedDict + LRU） | `infrastructure/translation/cache.py` |
-| 102-127 | Google gtx 线路 | `infrastructure/translation/google.py:GoogleGtxTranslator` |
+| 102-127 | Google gtx 线路 | ~~`infrastructure/translation/google.py:GoogleGtxTranslator`~~（**F7 已删除**，实测 HTTP 429） |
 | 129-182 | MyMemory 线路（额度提示识别、langpair 猜测） | `infrastructure/translation/mymemory.py` |
 | 185-228 | Google clients5 线路 | `infrastructure/translation/google.py:GoogleClients5Translator` |
-| 231-259 | Lingva 镜像 | `infrastructure/translation/lingva.py` |
-| 262-304 | 5 路并发竞速 | `infrastructure/translation/racing.py` |
+| 231-259 | Lingva 镜像 | ~~`infrastructure/translation/lingva.py`~~（**F7 已删除**，实测 HTTP 403） |
+| 262-304 | 5 路并发竞速 | `infrastructure/translation/racing.py`（**F7 后只剩 2 路**：clients5 + MyMemory） |
 | 307-325 | 失败文案格式化 | `infrastructure/translation/errors.py` |
 | 328-348 | 界面配色与字体 | `config/theme.py` |
 | 351-409 | `TranslatorApp.__init__` 状态字段 | `presentation/tk/translate_window.py` + `bootstrap/container.py` |
@@ -125,17 +125,18 @@
 
 | 文件 | 作用 |
 |---|---|
-| `domain/ports/*.py`（16 个） | 端口 Protocol：翻译、OCR、朗读、词表仓储、设置仓储、API Key、备份、剪贴板、取词、热键、鼠标位置、输入监听、窗口激活、例句生成、时钟、错误格式化 |
+| `domain/ports/*.py`（17 个） | 端口 Protocol：翻译、OCR、朗读、词表仓储、设置仓储、API Key、备份、剪贴板、取词、热键、鼠标位置、输入监听、窗口激活、代理设置、例句生成、时钟、错误格式化 |
 | `domain/services/review_session.py` | 复习会话状态机（桌面端与 Web 端共用） |
 | `application/deps.py` | 表示层依赖包（四套：划词 / 复习 / 网页 / 后台） |
 | `application/progress.py`、`application/dto.py` | 流程阶段枚举 + 进度回调 + 用例结果对象 |
 | `application/vocabulary_target.py` | 当前词表绑定（支持复习端切换词表文件） |
 | `application/backup.py` | 启动备份用例 |
+| `domain/models/translation.py` | `TranslationResult`：`display_text`（日志用，带引擎标签）与 `card_text`（卡片用，干净译文），见 KNOWN_ISSUES F8 |
 | `presentation/texts.py` | 全部界面文案的唯一出口 |
 | `presentation/tk/translate_sink.py`、`app_events.py` | 线程安全的结果出口 + 热键→线程→用例编排（含"触发瞬间取锚点"） |
 | `infrastructure/input/win32_pointer.py`、`win32_input_watcher.py` | 鼠标位置（`GetCursorPos`）与"任意键/鼠标键按下"监听（浮层锚点与关闭，见 KNOWN_ISSUES #23/#24） |
 | `infrastructure/network/`（3 个）、`config/proxy.py`、`domain/ports/proxy.py` | 代理：系统代理读取、代理策略（直连/跟随系统/自定义）、带失败回退的 HTTP GET（见 KNOWN_ISSUES #25） |
 | `presentation/tk/translate_ui.py` | 面板与窗口壳的 Protocol 契约 |
 | `bootstrap/container.py` / `wiring.py` / `cli.py` / `streamlit_entry.py` | 组合根与四类进程入口 |
-| `scripts/*.py`（6 个） | 分层校验 / 对拍 / 冒烟 / Tk 冒烟 / Web 结构对拍 / 一键全跑 |
-| `tests/*`（13 个） | 160 项测试（含分层约束与表示层纯逻辑） |
+| `scripts/*.py`（8 个） | 分层校验 / 对拍 / 冒烟 / Tk 冒烟 / Web 结构对拍 / 一键全跑 + 取词诊断 / 修饰键诊断 |
+| `tests/*`（18 个） | 211 项测试（含分层约束、代理、线路裁剪与表示层纯逻辑） |

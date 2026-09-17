@@ -172,7 +172,7 @@ class EngineWiringTests(unittest.TestCase):
     def test_engines_receive_policy(self) -> None:
         policy = ProxyPolicy(MODE_CUSTOM, PRESET_CLASH)
         translator = build_translator("google", TranslationCache(), policy=policy)
-        engines = [translator._gtx, translator._clients5, translator._mymemory, *translator._lingvas]  # noqa: SLF001
+        engines = [translator._clients5, translator._mymemory]  # noqa: SLF001
         for engine in engines:
             self.assertIs(engine._policy, policy, msg=type(engine).__name__)  # noqa: SLF001
 

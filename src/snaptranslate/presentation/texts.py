@@ -69,10 +69,10 @@ class WindowText:
     FLOATING_CHECKBOX = "鼠标旁悬浮提示"
     SOURCE_LABEL = "翻译源"
     SOURCE_MYMEMORY = "MyMemory（免梯 · 免密钥 · 有每日免费限额）"
-    SOURCE_AUTO_RACE = "自动竞速（Google 双线路 + MyMemory + Lingva 镜像，谁先成功用谁）"
+    SOURCE_AUTO_RACE = "自动竞速（clients5 + MyMemory，谁先成功用谁）"
     SOURCE_HINT = (
-        "竞速含 translate.googleapis.com、clients5.google.com、MyMemory、Lingva；"
-        "MyMemory 用量大时可能提示配额用尽。"
+        "竞速含 clients5.google.com 与 MyMemory；"
+        "gtx（稳定 429）与两个 Lingva 镜像（Cloudflare 403）已停用。"
     )
     HOTKEY_LABEL = "快捷键设置（格式：ctrl+l / tab+q）"
     HOTKEY_APPLY = "应用并保存"

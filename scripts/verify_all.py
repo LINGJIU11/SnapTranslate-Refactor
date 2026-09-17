@@ -17,6 +17,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+#: 本脚本自己的 stdout 也可能是 cp936（被管道重定向时），打印含中文/emoji 的子进程输出会崩
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 #: 统一给子进程 UTF-8 输出：Windows 控制台默认 cp936，会把 📘 这类字符变成 UnicodeEncodeError
 CHILD_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
 

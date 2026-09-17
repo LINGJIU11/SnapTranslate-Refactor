@@ -118,9 +118,23 @@ class FakeSink:
     def show_cursor(self, message: str, *, duration_ms=None) -> None:
         pass
 
-    def show_result(self, original: str, result: str, *, save_translation=None, anchor=None) -> None:
+    def show_result(
+        self,
+        original: str,
+        result: str,
+        *,
+        save_translation=None,
+        anchor=None,
+        card_text=None,
+    ) -> None:
         self.results.append(
-            {"original": original, "result": result, "save": save_translation, "anchor": anchor}
+            {
+                "original": original,
+                "result": result,
+                "save": save_translation,
+                "anchor": anchor,
+                "card_text": card_text,
+            }
         )
 
     def refresh_recent(self, original: str, translated: str) -> None:
@@ -171,6 +185,18 @@ class AnchorTests(unittest.TestCase):
         self.assertEqual(sink.anchor_reads, 1, "锚点只应在触发时取一次")
         self.assertEqual(sink.results[0]["anchor"], self.HOTKEY_POS)
         self.assertEqual(sink.results[0]["result"], "你好\n（Google 最快返回）")
+
+    def test_engine_label_only_in_log_not_on_card(self) -> None:
+        """F8：引擎标签进日志（``result``），卡片拿到的是干净译文（``card_text``）。"""
+        sink = FakeSink([self.HOTKEY_POS])
+        runner, _feedback, _deps = self._runner(sink)
+
+        runner.dispatch(ACTION_TRANSLATE)()
+
+        record = sink.results[0]
+        self.assertIn("最快返回", record["result"], "日志里要保留引擎标签")
+        self.assertEqual(record["card_text"], "你好", "卡片上不能带标签")
+        self.assertNotIn("最快返回", record["card_text"])
 
     def test_error_card_uses_same_anchor(self) -> None:
         sink = FakeSink([self.HOTKEY_POS])

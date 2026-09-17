@@ -66,6 +66,7 @@ class ResultSink(Protocol):
         *,
         save_translation: str | None = None,
         anchor: tuple[int, int] | None = None,
+        card_text: str | None = None,
     ) -> None: ...
 
     def refresh_recent(self, original: str, translated: str) -> None: ...
@@ -239,8 +240,12 @@ class ResultPresenter:
         *,
         save_translation: str | None = None,
         anchor: tuple[int, int] | None = None,
+        card_text: str | None = None,
     ) -> None:
-        """原 ``_ui_show_result``：记住"最近一条翻译" → 日志 → 最近 3 条 → 悬浮卡片。"""
+        """原 ``_ui_show_result``：记住"最近一条翻译" → 日志 → 最近 3 条 → 悬浮卡片。
+
+        ``result``（可带引擎标签）进日志；``card_text``（干净译文）上卡片 —— 见 F8。
+        """
         stored = save_translation if save_translation is not None else result
         with self._last_lock:
             self._last_original = original
@@ -248,7 +253,7 @@ class ResultPresenter:
         self._host.remember_last_translation(original, stored)
         self.append_log(original, result)
         self.refresh_recent(original, stored)
-        self._floating.show(original, result, anchor=anchor)
+        self._floating.show(original, card_text if card_text is not None else result, anchor=anchor)
 
     def refresh_recent(self, original: str, translated: str) -> None:
         """原 ``_push_recent_translation`` + ``_refresh_recent_ui``（存**干净译文**）。"""

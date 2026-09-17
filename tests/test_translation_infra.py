@@ -21,7 +21,6 @@ from snaptranslate.infrastructure.translation.factory import (
     build_translator,
 )
 from snaptranslate.infrastructure.translation.google import parse_clients5_payload
-from snaptranslate.infrastructure.translation.lingva import LingvaTranslator
 from snaptranslate.infrastructure.translation.mymemory import (
     MYMEMORY_ENDPOINT,
     TranslationQuotaError,
@@ -136,31 +135,31 @@ class ErrorFormattingTests(unittest.TestCase):
 
 
 class RacingTranslatorTests(unittest.TestCase):
-    def _racing(self, cache: TranslationCache, gtx, c5, mymemory, lingvas) -> RacingTranslator:
-        return RacingTranslator(cache, gtx, c5, mymemory, lingvas)
+    """F7 之后竞速只剩两条线路：clients5 与 MyMemory。"""
+
+    def _racing(self, cache: TranslationCache, c5, mymemory) -> RacingTranslator:
+        return RacingTranslator(cache, c5, mymemory)
 
     def test_returns_first_non_empty_with_label(self) -> None:
         cache = TranslationCache()
         racing = self._racing(
             cache,
-            _FakeTranslator("gtx", text=""),
             _FakeTranslator("c5", text="译文"),
             _FakeTranslator("mm", error=RuntimeError("慢")),
-            [],
         )
         result = racing.translate("hello")
         self.assertEqual(result.text, "译文")
         self.assertTrue(result.display_text.endswith("（Google（clients5） 最快返回）"))
+        # 卡片上不带引擎标签（F8）
+        self.assertEqual(result.card_text, "译文")
 
     def test_cache_hit_has_no_label(self) -> None:
         cache = TranslationCache()
-        cache.put("google", "hello", "缓存译文")
+        cache.put("google_c5", "hello", "缓存译文")
         racing = self._racing(
             cache,
-            _FakeTranslator("gtx", text="不应被调用"),
-            _FakeTranslator("c5", text="x"),
+            _FakeTranslator("c5", text="不应被调用"),
             _FakeTranslator("mm", text="y"),
-            [],
         )
         result = racing.translate("hello")
         self.assertEqual(result.text, "缓存译文")
@@ -169,10 +168,8 @@ class RacingTranslatorTests(unittest.TestCase):
     def test_prefers_quota_error_when_all_fail(self) -> None:
         racing = self._racing(
             TranslationCache(),
-            _FakeTranslator("gtx", error=requests.exceptions.ConnectionError("boom")),
             _FakeTranslator("c5", error=requests.exceptions.Timeout("timeout")),
             _FakeTranslator("mm", error=TranslationQuotaError("MYMEMORY WARNING")),
-            [LingvaTranslatorStub()],
         )
         with self.assertRaises(TranslationQuotaError):
             racing.translate("hello")
@@ -180,20 +177,17 @@ class RacingTranslatorTests(unittest.TestCase):
     def test_all_empty_returns_no_result(self) -> None:
         racing = self._racing(
             TranslationCache(),
-            _FakeTranslator("gtx", text=""),
             _FakeTranslator("c5", text=""),
             _FakeTranslator("mm", text=""),
-            [],
         )
         self.assertEqual(racing.translate("hello").text, NO_TRANSLATION_RESULT)
 
-
-class LingvaTranslatorStub:
-    name = "lingva"
-    label = "Lingva（stub）"
-
-    def translate(self, text: str) -> TranslationResult:
-        return TranslationResult.no_result()
+    def test_only_two_lines_participate(self) -> None:
+        """被裁掉的 gtx 与两条 Lingva 不能再出现在竞速里（F7）。"""
+        racing = build_racing_translator(TranslationCache())
+        self.assertEqual(racing.line_names, ("Google（clients5）", "MyMemory"))
+        self.assertFalse(hasattr(racing, "_lingvas"))
+        self.assertFalse(hasattr(racing, "_gtx"))
 
 
 class FactoryTests(unittest.TestCase):
@@ -207,10 +201,6 @@ class FactoryTests(unittest.TestCase):
 
     def test_unknown_source_falls_back_to_racing(self) -> None:
         self.assertEqual(build_translator("whatever", TranslationCache()).name, "racing")
-
-    def test_racing_has_two_lingva_mirrors(self) -> None:
-        racing = build_racing_translator(TranslationCache())
-        self.assertEqual(len(racing._lingvas), 2)  # noqa: SLF001 - 结构性断言
 
 
 class DeepSeekParsingTests(unittest.TestCase):

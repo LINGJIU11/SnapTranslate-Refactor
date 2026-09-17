@@ -3,13 +3,15 @@
 阶段一是**纯结构重构**：为了可验证的"行为等价"，原版的缺陷**不修**，只在下面登记清楚
 （位置、成因、可复现证据、修复方向）。
 
-**但阶段一之后有五处主动修复/改动**（用户实测后要求，属于有意偏离原版）：
+**但阶段一之后有八处主动修复/改动**（用户实测后要求，属于有意偏离原版）：
 取词失败被静默吞掉（#20）、界面改热键要重启才生效（#21）、热键里的 Alt/Shift 会"毒化"注入的 Ctrl+C（#22）、
-悬浮卡片改为按"热键按下瞬间"的鼠标位置显示（#23）、卡片不再定时消失而是等用户下一次按键/点鼠标（#24）
+悬浮卡片改为按"热键按下瞬间"的鼠标位置显示（#23）、卡片不再定时消失而是等用户下一次按键/点鼠标（#24）、
+新增代理设置（#25）、**砍掉两条失效线路 + 引擎标签只进日志不进卡片（#26/#27）**
 ——见 §五 `[修复]`。修完仍有回归测试兜底，其余条目状态不变。
 
 标记说明：`[保留]` = 行为等价保留；`[修复]` = 已主动修掉（偏离原版，配回归测试）；
-`[偏差]` = 本轮有意引入的差异；`[历史]` = 仓库遗留问题。
+`[偏差]` = 本轮有意引入的差异；`[历史]` = 仓库遗留问题；
+`[已缓解]` / `[已修]` / `[已失效]` = 后续修复（F1–F8）带来的状态变化，括号内指向对应条目。
 
 ---
 
@@ -22,22 +24,29 @@
 - 现在：新增代理设置（直连 / 跟随系统代理 / 自定义，见 §五 F6 #25），请求层按策略走代理；
   仍保留"代理连不上自动回退直连"。
 
-### #2 每次划词 = 5 路并发跨境请求 `[保留]`
+### #2 每次划词 = 5 路并发跨境请求 `[已缓解 → 见 F7/#26]`
 - 位置：`infrastructure/translation/racing.py`（与原 `main.py:262-304` 等价）。
 - 成因：竞速不做健康探测，谁先返回有效译文用谁；`TRANSLATE_TIMEOUT=(6,22)`、`TRANSLATE_RETRIES=2`，
   最坏情况一次划词要挂 ~28s 才报错；`cancel_futures` 只能取消尚未起跑的任务。
+- 现状：并发数已从 5 降到 **2**（gtx / Lingva 两条失效线路已删除，见 F7）；
+  "最坏 28s" 的尾巴仍在（只剩 2 条，理论最坏 ~28s，但两条都是实测可用的线路）。
 - 修复方向：成功率/延迟先验排序 + 串行短路 + 探测缓存。
 
-### #3 MyMemory 是翻译记忆库而非机器翻译 `[保留]`
+### #3 MyMemory 是翻译记忆库而非机器翻译 `[保留，F7 后权重上升]`
 - 证据：本机 `vocab.json` 中存在 `Generally → (无翻译结果)`、`parade → 示威游行,阅兵…;v.游行` 这类输出。
 - 成因：免费匿名额度 + 语料库匹配；配额提示混在译文正文里（`MYMEMORY WARNING...`），
   代码靠关键字识别（`infrastructure/translation/mymemory.py:parse_mymemory_response`）。
-- 修复方向：把它降级为最后兜底，主通道改用官方 API 或 LLM。
+- 现状：F7 砍掉两条线路后，MyMemory 从"5 选 1"变成"2 选 1"，**命中率翻倍**，
+  译文质量参差的问题会比以前更常见（实测 `the quick brown fox...` 它翻成"敏捷的棕色狐狸跳过了懒狗"，
+  不如 clients5 的"那只懒狗"）。
+- 修复方向：把它降级为最后兜底，主通道改用官方 API 或 LLM（第一项改善路线图的主线）。
 
-### #4 缓存命中时不显示引擎标签 `[保留]`
+### #4 缓存命中时不显示引擎标签 `[已失效 → 见 F8/#27]`
 - 位置：`racing.py` 竞速前的缓存短路（与原 `main.py:267-270` 一致）→ `engine_label=None`，
-  界面不会出现"（X 最快返回）"。这是原版行为，测试 `test_cache_hit_has_no_label` 已固定。
-- 影响：同一句话第二次查询时标签消失，用户会以为换了引擎。
+  日志里不会出现"（X 最快返回）"。
+- 现状：F8 之后**卡片本来就不显示引擎标签**（只有日志显示），所以"第二次查询标签消失"这件事
+  用户已经看不到；日志侧缓存命中无标签属数据事实，保留。
+- 测试：`test_cache_hit_has_no_label` 仍固定日志侧行为。
 
 ---
 
@@ -47,12 +56,13 @@
 - 位置：`presentation/tk/floating_card.py`（与原 `main.py:729-741` 一致）。
 - 影响：查单词时卡片过大留白、查长句时高度不够；鼠标一动或稍一走神内容就没了，不能钉住/拖动/复制。
 
-### #6 悬浮卡片"收录生词本"会把引擎标签写进词表 `[保留，重要]`
-- 位置：`presentation/tk/floating_card.py` + `translate_window.py`（原 `main.py:854-861 → 675-678 → 944-947`）。
+### #6 悬浮卡片"收录生词本"会把引擎标签写进词表 `[已修 → 见 F8/#27，重要]`
+- 位置：原 `presentation/tk/floating_card.py` + `translate_window.py`（原 `main.py:854-861 → 675-678 → 944-947`）。
 - 成因：卡片按钮存的是 `TranslationResult.display_text`（含 `\n（Google 最快返回）`），
   经 `clean_text` 折行后落库；而"最近 3 条"的收录按钮存的是干净译文——两处语义不一致。
 - 证据：本机 `vocab.json` 中已有 `atmospheric → 大气 的（Google 最快返回）`、`verified → 已验证 （Google 最快返回）` 等条目。
-- 修复方向：卡片按钮改存 `result.text`；并写一次性清洗脚本处理历史数据。
+- 现状：F8 拆出 `TranslationResult.card_text`（干净译文），卡片显示与"收录"都改用它，
+  污染源已消失；**历史脏数据未清洗**（需要时写一次性清洗脚本，按 `（X 最快返回）` 正则剥离）。
 
 ### #7 取词会覆盖用户剪贴板且不还原 `[保留]`
 - 位置：`infrastructure/input/win32_selection.py`（与原 `main.py:949-964` 一致）。
@@ -136,12 +146,14 @@
 | D10 | **F4（#23）**：悬浮卡片以"热键按下瞬间"的鼠标位置为锚点 | 见 §五；原版是结果返回后才读光标，选中单词后手一动卡片就飘走 |
 | D11 | **F5（#24）**：卡片不再定时自动关闭，改为"下一次按任意键/鼠标左右键"才关（点在卡片上不算） | 见 §五；新增一个 25ms 的输入监听线程（`Win32InputWatcher`） |
 | D12 | **F6（#25）**：新增代理设置（直连 / 跟随系统代理 / 自定义）+ 代理失败自动回退直连 | 见 §五；默认仍是直连，只有用户显式打开才走代理 |
+| D13 | **F7（#26）**：删除 gtx 与 Lingva 两条线路，竞速从 5 路降到 2 路（clients5 + MyMemory） | 见 §五；实测两条都是失效线路（gtx 429 / Lingva 403，直连与代理下均失败），保留只是浪费并发与配额 |
+| D14 | **F8（#27）**：引擎标签只留在日志，不再画到悬浮卡片上（`TranslationResult.card_text`） | 见 §五；卡片回归"干净译文"，同时顺手掐掉 #6 的标签污染源 |
 
 ---
 
 ## 五、阶段一之后的有意修复 `[修复]`
 
-下面两条是**主动偏离原版**的修复，各自配了回归测试；其余登记条目状态不变。
+下面是**主动偏离原版**的修复，各自配了回归测试；其余登记条目状态不变。
 
 ### F1 取词失败被静默吞掉：把剪贴板旧内容当成原文 ← 已修
 - **现象**：在浏览器里划词翻译，连续三次都返回"上次复制过的网址"——
@@ -233,6 +245,42 @@
   `infrastructure/translation/*`（4 个引擎接受 `policy`）、`application/settings.py`、`presentation/tk/{translate_panel,translate_shell,translate_window}.py`
 - **回归测试**：`tests/test_proxy.py`（17 项：模式解析、私有地址直连、回退直连、设置往返、引擎接线）、
   `scripts/gui_smoke.py --with-tk`（界面改代理 → 策略即时生效 + 落盘）
+
+### F7 砍掉两条"拖后腿"的线路：竞速 5 路 → 2 路 ← 已删（#2 / #26）
+- **依据（本机实测，2026-09-17）**：gtx 直连与走 Clash 都是 **HTTP 429**（Google 已对免费 gtx 端点限流）；
+  Lingva（`lingva.ml` 等公共实例）直连与走 Clash 都是 **403**（Cloudflare 拦截）；
+  clients5 **HTTP 200**（直连 715ms / Clash 343ms）、MyMemory **HTTP 200**（~1.3s）。
+  即 5 条线路里只有 2 条真的能出中文，另 3 条（含 `translate.googleapis.com` 的 gtx）
+  每次划词都在白等并发与超时预算。
+- **改法**：
+  1. 删除 `infrastructure/translation/lingva.py` 整个文件，删掉 gtx 相关类与端点常量
+     （`infrastructure/translation/google.py` 现在只留 clients5）；
+  2. `policy.py` 的 `RACE_MAX_WORKERS` 从 5 降到 **2**，缓存归属键只剩 `google_c5` / `mymemory`；
+  3. `RacingTranslator` 改为显式接收两条线路（`google_clients5` + `mymemory`），
+     并暴露 `line_names` 供自检/日志打印；
+  4. 界面下拉里的"自动竞速"文案改成"clients5 + MyMemory（谁先成功用谁）"。
+- **实测收益**：一次划词从"5 路并发、最坏 ~28s"变成"2 路并发"，直连实测 **632ms** 出结果
+  （此前同一句 1014ms）。
+- **保留的部分**：超时/重试参数（`(6,22)` / `2`）与"谁先成功用谁"策略不变，仍是行为等价的一部分。
+- **代码**：`infrastructure/translation/{policy,racing,google,factory}.py`（`lingva.py` 已删）、
+  `presentation/texts.py`、`scripts/diagnose_url_capture.py`
+- **回归测试**：`tests/test_translation_infra.py::test_only_two_lines_participate`（断言只有两条线路被启动）、
+  `tests/test_proxy.py`（引擎接线断言从 4 个引擎收敛到 `_clients5` / `_mymemory`）
+
+### F8 引擎标签只进日志，不进悬浮卡片 ← 已改（#4 / #6 / #27）
+- **诉求**："（'最快返回了'）这些直接在日志里面显示就好了" —— 卡片是给人看译文的地方，
+  不需要出现实现细节。
+- **改法**：`TranslationResult` 拆成两个属性——
+  `display_text` = **日志文本**（仍带 `\n（X 最快返回）`，控制台/翻译记录/对拍脚本口径不变），
+  `card_text` = **卡片文本**（干净译文）；`presentation/tk/translate_sink.py:show_result()` 记录日志用前者、
+  画卡片用后者；卡片上的"收录生词本"按钮随之存干净译文。
+- **实测**：日志文本 `敏捷的棕色狐狸跳过了懒狗。\n（MyMemory 最快返回）`，
+  卡片文本 `敏捷的棕色狐狸跳过了懒狗。`。
+- **顺带修掉**：#6（卡片收录把引擎标签写进词表）的污染源消失——两处收录语义现在一致。
+  **历史脏数据未清洗**（需要时按 `（X 最快返回）` 正则写一次性脚本）。
+- **代码**：`domain/models/translation.py`、`presentation/tk/{translate_sink,app_events}.py`、`presentation/texts.py`
+- **回归测试**：`tests/test_translate_jobs.py::test_engine_label_only_in_log_not_on_card`、
+  `tests/test_translation_domain.py`（`display_text` 带标签 / `card_text` 不带）
 
 ---
 

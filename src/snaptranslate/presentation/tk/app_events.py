@@ -254,7 +254,14 @@ class TranslateJobRunner:
         def apply() -> None:
             if self._sink.is_closing():
                 return
-            self._sink.show_result(source, display, save_translation=result.text, anchor=anchor)
+            # 日志用带标签的 display_text；卡片用干净译文（F8：标签不上卡片）
+            self._sink.show_result(
+                source,
+                display,
+                save_translation=result.text,
+                anchor=anchor,
+                card_text=result.card_text,
+            )
             # 原 ``main.py:995``：光标提示"翻译完成"1000ms —— 文案与时长都取自统一文案表
             _status_text, done_text, done_duration = StatusText.texts(Stage.DONE)
             self._sink.show_cursor(done_text, duration_ms=done_duration or DONE_CURSOR_DURATION_MS)

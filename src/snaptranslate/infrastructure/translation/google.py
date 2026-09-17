@@ -1,7 +1,7 @@
-"""Google 两条免费线路（原 ``main.py:102-127`` 与 ``202-228``）。
+"""Google clients5 线路（原 ``main.py:202-228``）。
 
-两条线路分别打不同主机（``translate.googleapis.com`` / ``clients5.google.com``），
-原版让它们并发竞速以提高弱网下的命中率。
+原版还有一条 ``translate.googleapis.com``（gtx）线路，因稳定 429 已在 F7 中裁掉
+（见 KNOWN_ISSUES.md §五）；这里只保留实际能供货的 ``clients5.google.com``。
 """
 
 from __future__ import annotations
@@ -23,51 +23,7 @@ from snaptranslate.infrastructure.translation.policy import (
     TRANSLATE_TIMEOUT,
 )
 
-GTX_ENDPOINT = "https://translate.googleapis.com/translate_a/single"
 CLIENTS5_ENDPOINT = "https://clients5.google.com/translate_a/t"
-
-
-class GoogleGtxTranslator:
-    """``client=gtx`` 逆向接口，质量较好，国内常需可访问 Google 的网络。"""
-
-    name = "google"
-    cache_key = "google"
-
-    def __init__(
-        self,
-        cache: TranslationCache,
-        *,
-        timeout=TRANSLATE_TIMEOUT,
-        retries: int = TRANSLATE_RETRIES,
-        policy: ProxyPolicy | None = None,
-    ) -> None:
-        self._cache = cache
-        self._timeout = timeout
-        self._retries = retries
-        self._policy = policy
-
-    def translate(self, text: str) -> TranslationResult:
-        hit = self._cache.get(self.cache_key, text)
-        if hit is not None:
-            return TranslationResult(hit)
-        url = f"{GTX_ENDPOINT}?client=gtx&sl=auto&tl=zh-CN&dt=t&q={quote(text)}"
-        for attempt in range(self._retries):
-            try:
-                resp = http_get(url, timeout=self._timeout, headers=HTTP_HEADERS, policy=self._policy)
-                resp.raise_for_status()
-                data = json.loads(resp.text)
-                translated = "".join(part[0] for part in data[0] if part and part[0])
-                out = translated.strip() if translated.strip() else NO_TRANSLATION_RESULT
-                if out != NO_TRANSLATION_RESULT:
-                    self._cache.put(self.cache_key, text, out)
-                return TranslationResult(out)
-            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
-                if attempt + 1 < self._retries:
-                    time.sleep(RETRY_BACKOFF_BASE * (attempt + 1))
-                    continue
-                raise
-        # 理论不可达（retries >= 1），仅为类型完整性
-        return TranslationResult.no_result()
 
 
 def parse_clients5_payload(data: object) -> str:
@@ -88,7 +44,7 @@ def parse_clients5_payload(data: object) -> str:
 
 
 class GoogleClients5Translator:
-    """Chrome 词典扩展入口（``client=dict-chrome-ex``），换个域名赌它没被封。"""
+    """Chrome 词典扩展入口（``client=dict-chrome-ex``）。"""
 
     name = "google_clients5"
     cache_key = "google_c5"

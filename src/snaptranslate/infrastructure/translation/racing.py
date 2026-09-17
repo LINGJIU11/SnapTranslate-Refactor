@@ -1,25 +1,25 @@
 """并发竞速策略（原 ``main.py:262-304`` ``_translate_parallel_race_zh``）。
 
-同时向多条免费线路发起请求，**谁先返回有效译文就用谁**，其余请求在后台自然结束。
-沿用原版的两个关键语义：
+原版同时打 5 条线路；**2026-09-17 按实测裁剪为 2 条**（见 KNOWN_ISSUES.md §五 F7）：
 
-1. 竞速前先查缓存：命中则直接返回且**不带引擎标签**（界面不会显示"（X 最快返回）"）；
-2. 全部失败时优先抛 MyMemory 的额度提示（原版判断 ``isinstance(err, RuntimeError)``）。
+- ``translate.googleapis.com``（gtx）稳定 **HTTP 429**，走代理也一样；
+- 两个 Lingva 镜像被 Cloudflare 挡（**HTTP 403**，返回挑战页）。
+
+留下真正能供货的 ``clients5.google.com`` 与 ``api.mymemory.translated.net``。
+其余语义与原版一致：谁先返回有效译文用谁；命中缓存直接短路；
+全部失败时优先抛 MyMemory 的额度提示。
 """
 
 from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 
-from snaptranslate.domain.errors import TranslationError
 from snaptranslate.domain.models.translation import TranslationResult
 from snaptranslate.domain.ports.translator import Translator
 from snaptranslate.infrastructure.translation.cache import TranslationCache
-from snaptranslate.infrastructure.translation.lingva import LingvaTranslator
 from snaptranslate.infrastructure.translation.mymemory import TranslationQuotaError
 from snaptranslate.infrastructure.translation.policy import (
     CACHE_ENGINE_KEYS,
-    ENGINE_LABEL_GOOGLE,
     ENGINE_LABEL_GOOGLE_CLIENTS5,
     ENGINE_LABEL_MYMEMORY,
     RACE_MAX_WORKERS,
@@ -27,26 +27,27 @@ from snaptranslate.infrastructure.translation.policy import (
 
 
 class RacingTranslator:
-    """多线路并发竞速翻译器。"""
+    """多线路并发竞速翻译器（当前 2 条线路）。"""
 
     name = "racing"
 
     def __init__(
         self,
         cache: TranslationCache,
-        google_gtx: Translator,
         google_clients5: Translator,
         mymemory: Translator,
-        lingvas: list[LingvaTranslator],
         *,
         max_workers: int = RACE_MAX_WORKERS,
     ) -> None:
         self._cache = cache
-        self._gtx = google_gtx
         self._clients5 = google_clients5
         self._mymemory = mymemory
-        self._lingvas = lingvas
         self._max_workers = max_workers
+
+    @property
+    def line_names(self) -> tuple[str, ...]:
+        """当前参与竞速的线路名（日志/自检用）。"""
+        return (ENGINE_LABEL_GOOGLE_CLIENTS5, ENGINE_LABEL_MYMEMORY)
 
     def translate(self, text: str) -> TranslationResult:
         for key in CACHE_ENGINE_KEYS:
@@ -57,11 +58,8 @@ class RacingTranslator:
         executor = ThreadPoolExecutor(max_workers=self._max_workers)
         future_to_label: dict[Future, str] = {}
         try:
-            future_to_label[executor.submit(self._gtx.translate, text)] = ENGINE_LABEL_GOOGLE
             future_to_label[executor.submit(self._clients5.translate, text)] = ENGINE_LABEL_GOOGLE_CLIENTS5
             future_to_label[executor.submit(self._mymemory.translate, text)] = ENGINE_LABEL_MYMEMORY
-            for lingva in self._lingvas:
-                future_to_label[executor.submit(lingva.translate, text)] = lingva.label
 
             errors: list[BaseException] = []
             for future in as_completed(future_to_label):

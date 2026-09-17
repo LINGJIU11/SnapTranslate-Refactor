@@ -72,7 +72,7 @@ def capture(clipboard_text: str, *, copy_succeeds: bool, copied_text: str = "") 
 
 def translator():
     racing = build_racing_translator(TranslationCache())
-    for engine in (racing._gtx, racing._clients5, racing._mymemory):  # noqa: SLF001 - 诊断用，缩短超时
+    for engine in (racing._clients5, racing._mymemory):  # noqa: SLF001 - 诊断用，缩短超时
         engine._timeout = (4, 10)  # noqa: SLF001
         engine._retries = 1  # noqa: SLF001
     return racing
