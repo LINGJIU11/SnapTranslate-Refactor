@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "snaptranslate"
+version = "2.0.0"
+description = "Windows 划词翻译 + 截图 OCR + 生词本复习（分层模块化重构版）"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "pyperclip>=1.8.2",
+    "requests>=2.31.0",
+    "pillow>=10.0.0",
+    "pytesseract>=0.3.10",
+    "openai>=1.40.0",
+    "streamlit>=1.33.0",
+]
+
+[project.scripts]
+snaptranslate = "snaptranslate.bootstrap.cli:translate_main"
+snaptranslate-review = "snaptranslate.bootstrap.cli:review_main"
+snaptranslate-review-web = "snaptranslate.bootstrap.cli:review_web_main"
+snaptranslate-admin = "snaptranslate.bootstrap.cli:admin_main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+snaptranslate = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
