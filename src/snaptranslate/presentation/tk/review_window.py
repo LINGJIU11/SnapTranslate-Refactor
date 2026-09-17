@@ -195,7 +195,8 @@ class ReviewApp:
         self._card.toggle_example_zh()
 
     def _apply_grade(self, grade: Grade) -> None:
-        self._card.apply_grade(grade)
+        """原 ``_apply_grade``：评分成功后由控制器重绘到下一张卡（见 ``CardController.apply_grade``）。"""
+        self._card.apply_grade(grade, self._read_mode_var.get(), self._volume())
 
     def _volume(self) -> int:
         """原版到处写 ``int(self.tts_volume_var.get()) if hasattr(...) else 100``。"""

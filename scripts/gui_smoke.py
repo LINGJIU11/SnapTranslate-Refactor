@@ -126,6 +126,57 @@ def check_proxy_row(app) -> None:
         app.on_apply_proxy()
 
 
+def check_review_advance() -> None:
+    """回归 #28：点「认识」之后，卡片必须画到**下一张**（真实 Tk + 真实用例）。
+
+    这正是单测与对拍都盖不到的"GUI 事件链"：原版 ``_advance_after_grade()`` 末尾的
+    ``self._show_card()`` 在阶段一重构时掉了，界面会停在旧卡（词 / 熟练度 / 进度 / 释义全不动），
+    而评分已经落到看不见的下一个词上（``scripts/diagnose_review_advance.py`` 可复现）。
+    """
+    import json
+    import shutil
+
+    from snaptranslate.bootstrap.container import Container, DataPaths
+    from snaptranslate.presentation.texts import ReviewText
+    from snaptranslate.presentation.tk.review_window import ReviewApp
+
+    tmp = ROOT / ".tmp-gui-smoke-review"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True, exist_ok=True)
+    items = [
+        {"word": word, "meaning": f"{word} 的释义", "score": 50.0, "reviews": 0}
+        for word in ("alpha", "bravo", "charlie", "delta")
+    ]
+    (tmp / "vocab.json").write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    try:
+        app = ReviewApp(Container(DataPaths.under(str(tmp))).review_app_deps())
+        app.root.withdraw()
+        app._sort_mode_var.set("score_asc")
+        app._on_sort_mode_change()
+        before = app._word_var.get()
+        app._toggle_meaning()  # 先揭示释义：重绘应当把它擦掉
+        app._apply_grade("know")
+        after = app._word_var.get()
+        current = app.session.current()
+        check(
+            "评分后卡片显示的词 = 会话当前词",
+            current is not None and after == current.word,
+            f"界面={after!r} 会话={getattr(current, 'word', None)!r}",
+        )
+        check("评分后卡片换到了下一张", after != before, f"{before!r} -> {after!r}")
+        check(
+            "评分后释义重新隐藏（揭示状态已重置）",
+            app._meaning_var.get() == ReviewText.MEANING_PLACEHOLDER,
+            f"meaning={app._meaning_var.get()!r}",
+        )
+        app.root.destroy()
+    except Exception as exc:  # noqa: BLE001
+        check("评分后卡片前进", False, f"{type(exc).__name__}: {exc}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def check_with_tk() -> None:
     print("\n=== 2. 真实 Tk 构造（--with-tk） ===")
     try:
@@ -191,6 +242,8 @@ def check_with_tk() -> None:
                 check(f"{name} 窗口销毁", False, f"{type(exc).__name__}: {exc}")
         else:
             check(f"{name} 拿到 Tk root", False, f"got {type(root).__name__}")
+
+    check_review_advance()
 
 
 def main() -> int:

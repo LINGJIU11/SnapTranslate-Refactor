@@ -3,10 +3,11 @@
 阶段一是**纯结构重构**：为了可验证的"行为等价"，原版的缺陷**不修**，只在下面登记清楚
 （位置、成因、可复现证据、修复方向）。
 
-**但阶段一之后有八处主动修复/改动**（用户实测后要求，属于有意偏离原版）：
+**但阶段一之后有九处主动修复/改动**（用户实测后要求，属于有意偏离原版）：
 取词失败被静默吞掉（#20）、界面改热键要重启才生效（#21）、热键里的 Alt/Shift 会"毒化"注入的 Ctrl+C（#22）、
 悬浮卡片改为按"热键按下瞬间"的鼠标位置显示（#23）、卡片不再定时消失而是等用户下一次按键/点鼠标（#24）、
-新增代理设置（#25）、**砍掉两条失效线路 + 引擎标签只进日志不进卡片（#26/#27）**
+新增代理设置（#25）、**砍掉两条失效线路 + 引擎标签只进日志不进卡片（#26/#27）**、
+**复习界面评分后卡片不前进（#28，阶段一回归）**
 ——见 §五 `[修复]`。修完仍有回归测试兜底，其余条目状态不变。
 
 标记说明：`[保留]` = 行为等价保留；`[修复]` = 已主动修掉（偏离原版，配回归测试）；
@@ -148,6 +149,7 @@
 | D12 | **F6（#25）**：新增代理设置（直连 / 跟随系统代理 / 自定义）+ 代理失败自动回退直连 | 见 §五；默认仍是直连，只有用户显式打开才走代理 |
 | D13 | **F7（#26）**：删除 gtx 与 Lingva 两条线路，竞速从 5 路降到 2 路（clients5 + MyMemory） | 见 §五；实测两条都是失效线路（gtx 429 / Lingva 403，直连与代理下均失败），保留只是浪费并发与配额 |
 | D14 | **F8（#27）**：引擎标签只留在日志，不再画到悬浮卡片上（`TranslationResult.card_text`） | 见 §五；卡片回归"干净译文"，同时顺手掐掉 #6 的标签污染源 |
+| — | **F9（#28）不属于偏差**：复习界面"评分后卡片不前进"是**阶段一引入的回归**，修复只是把原版行为补回来 | 见 §五 F9；原版 `_advance_after_grade()` 末尾本来就有 `_show_card()` |
 
 ---
 
@@ -281,6 +283,44 @@
 - **代码**：`domain/models/translation.py`、`presentation/tk/{translate_sink,app_events}.py`、`presentation/texts.py`
 - **回归测试**：`tests/test_translate_jobs.py::test_engine_label_only_in_log_not_on_card`、
   `tests/test_translation_domain.py`（`display_text` 带标签 / `card_text` 不带）
+
+### F9 复习界面评分后卡片不前进 ← 已修（#28，**阶段一回归**，不是原版缺陷）
+- **现象**（用户真机发现）：在生词复习界面点「认识 / 模糊 / 不认识」之后，屏幕上的英文**不切换**，
+  熟练度、进度、释义/例句也全都停在旧卡；连点几次，分数其实记在了**看不见的下一个词**上。
+- **性质**：原版 `vocab_review.py` **没有**这个问题——`_apply_grade()`（`694-716`）调用
+  `_advance_after_grade()`（`718-732`），而后者**最后一行**就是 `self._show_card()`（`732`）。
+  阶段一拆层时这一句没被搬过去，于是"会话推进了、界面没重绘"。这不是原版缺陷，
+  所以它既不在 §一/§二/§三 的 19 条里，也没有被当时的 6 道门禁拦住。
+- **根因链**：
+  `review_window.py:_apply_grade` → `card_controller.py:apply_grade` → `application/review.py:grade()`
+  （第 98 行 `session.advance_after_grade()`）→ **✗ 没有等价的 `_show_card()`**。
+  对照原版全文 5 处 `_show_card()`（`196` 构造 / `574` 换词表 / `612` 切排序 / **`732` 评分后** / `997` 批量生成完），
+  重构版只有前四处（`91 / 161 / 174 / 267`）——缺的正好是 `732` 那一处。
+  会话状态机 `ReviewSession.advance_after_grade()`（`review_session.py:121-133`）与原版逐行等价。
+- **实测证据**（`scripts/diagnose_review_advance.py`，真实 Tk 窗口 + 原版对照；修复前）：
+
+  | | 界面显示的词 | 会话真正指向的词 |
+  |---|---|---|
+  | 原版 | alpha → **bravo** | alpha → bravo |
+  | 重构版（修复前） | alpha → **alpha（不动）** | alpha → bravo |
+
+  连点三次（修复前）：界面始终 `alpha`，而评分依次落在 `alpha → bravo → charlie`；
+  连"显示释义"也一起残留——界面还显示 alpha 的释义，会话已经在 bravo 上且揭示状态已重置。
+- **修复**：`CardController.apply_grade(grade, read_mode, volume)` 在**用例成功返回**后调用
+  `self.show(read_mode, volume)`，严格照原版三种分支——无当前卡片/档位非法（用例返回 `None`）不重绘、
+  保存失败（`VocabularyIoError`）弹窗且不前进不重绘、成功才重绘（重绘顺带重置揭示、清空例句框、按朗读模式朗读新卡）。
+  调用方 `ReviewWindow._apply_grade` 传入朗读模式与音量。
+- **Web 端不受影响**：`card_view.apply_grade()` 之后 `st.rerun()`，`render_card()` 每次重读 `session.current()`。
+- **代码**：`presentation/tk/card_controller.py`、`presentation/tk/review_window.py`
+- **回归测试**：
+  `tests/test_presentation_pure.py::CardControllerGradeTests`（4 项：评分后重绘到下一张 / 重绘会重置揭示并重朗读 /
+  保存失败不重绘也不前进 / 档位非法什么都不做）、
+  `scripts/gui_smoke.py --with-tk`（真实 Tk：`评分后卡片显示的词 = 会话当前词`、`评分后卡片换到了下一张`、
+  `评分后释义重新隐藏`）、诊断脚本 `scripts/diagnose_review_advance.py`
+- **教训（验证盲区）**：当时 6 道门禁只覆盖"会话状态"（`test_review_session.py`）、
+  "review 模块纯函数对拍"（`parity_check.py:311-399`）与"窗口能不能建出来"（`gui_smoke`），
+  **"GUI 事件链"这一层是空的**——按钮 → 用例 → 重绘之间掉一环，所有门禁都不会响。
+  现已在该层补上断言；后续凡是"原版某处调用了渲染方法"的搬迁，都要在 `gui_smoke` 里留一条对应断言。
 
 ---
 

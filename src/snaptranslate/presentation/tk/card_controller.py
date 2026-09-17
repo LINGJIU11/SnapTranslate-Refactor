@@ -122,8 +122,19 @@ class CardController:
         self._form.render_example(entry, self._ref.session.reveal)
 
     # —— 评分 ——
-    def apply_grade(self, grade: Grade) -> None:
-        """原 ``_apply_grade``（``694-716``）：保存失败只弹窗、**不**推进卡片。"""
+    def apply_grade(self, grade: Grade, read_mode: str, volume: int) -> None:
+        """原 ``_apply_grade``（``694-716``）+ ``_advance_after_grade``（``718-732``）。
+
+        原版 ``_advance_after_grade()`` 的**最后一行**就是 ``self._show_card()``：
+        用例推进会话（重排顺序、前进一格、重置揭示状态）之后必须**重绘卡片**，
+        否则界面会停在旧卡上（文字、熟练度、进度、释义/例句全都不变），
+        而评分已经落在**看不见的下一个词**上。
+
+        因此这里严格照原版语义分三种情况：
+        - 没有当前卡片 / 档位非法（用例返回 ``None``）→ 不重绘；
+        - 保存失败（``VocabularyIoError``）→ 弹窗、不重绘、不前进；
+        - 成功 → 记日志，然后重绘（重绘顺带重置揭示、清空例句框、按模式自动朗读新卡）。
+        """
         entry = self._ref.session.current()
         if entry is None:
             return
@@ -138,6 +149,7 @@ class CardController:
         if result is None:
             return
         self._on_grade_logged(result, grade, word, revealed)
+        self.show(read_mode, volume)
 
     def current_entry(self) -> VocabEntry | None:
         """窗口的"手动重读当前词条"需要拿到当前卡片。"""

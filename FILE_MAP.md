@@ -17,7 +17,7 @@
 | L5 组装 | `src/snaptranslate/bootstrap/` | 5 | 291 | 容器（唯一装配点）、装配函数、CLI/Streamlit 进程入口 | 全部 |
 | — | 主包合计 | **120** | **7552** | | |
 
-外围：`entrypoints/`（4 个兼容入口）、`scripts/`（6 个门禁 + 2 个诊断脚本）、`tests/`（18 个文件 / 211 项测试）。
+外围：`entrypoints/`（4 个兼容入口）、`scripts/`（6 个门禁 + 3 个诊断脚本）、`tests/`（18 个文件 / 215 项测试）。
 
 粒度：单文件 60–300 行、单文件单职责。**唯一例外**是 `presentation/texts.py`（321 行，全部界面文案的唯一出口），已在 `ARCHITECTURE.md §3` 登记。
 
@@ -138,5 +138,5 @@
 | `infrastructure/network/`（3 个）、`config/proxy.py`、`domain/ports/proxy.py` | 代理：系统代理读取、代理策略（直连/跟随系统/自定义）、带失败回退的 HTTP GET（见 KNOWN_ISSUES #25） |
 | `presentation/tk/translate_ui.py` | 面板与窗口壳的 Protocol 契约 |
 | `bootstrap/container.py` / `wiring.py` / `cli.py` / `streamlit_entry.py` | 组合根与四类进程入口 |
-| `scripts/*.py`（8 个） | 分层校验 / 对拍 / 冒烟 / Tk 冒烟 / Web 结构对拍 / 一键全跑 + 取词诊断 / 修饰键诊断 |
-| `tests/*`（18 个） | 211 项测试（含分层约束、代理、线路裁剪与表示层纯逻辑） |
+| `scripts/*.py`（9 个） | 分层校验 / 对拍 / 冒烟 / Tk 冒烟 / Web 结构对拍 / 一键全跑 + 取词诊断 / 修饰键诊断 / 复习推进诊断 |
+| `tests/*`（18 个） | 215 项测试（含分层约束、代理、线路裁剪、复习卡片控制器与表示层纯逻辑） |

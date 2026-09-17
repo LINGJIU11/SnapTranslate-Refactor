@@ -102,6 +102,10 @@
 - `tk/` — 复习与后台管理（原 `vocab_review.py` / `set.py`）：
   `review_window.py`、`admin_window.py`、`card_controller.py`、`card_form.py`、`settings_form.py`、
   `log_panel.py`、`example_panel.py`、`generator_setup.py`、`speech.py`、`grade_buttons.py`。
+  - **约定（#28 的教训）**：`card_controller.py` 是"卡片该长什么样"的**唯一入口**——
+    凡是会改变会话状态的操作（评分 → 推进/重排/重置揭示），控制器必须在成功后自己调一次 `show()`。
+    界面层只负责转发事件，不再"记得顺手重绘"。原版把这一步写在 `_advance_after_grade()` 末尾，
+    阶段一搬家时漏掉，导致"状态推进、界面不动"，见 `KNOWN_ISSUES.md` #28 / F9。
 - `web/`：Streamlit 复习页，**只暴露 `render_page(deps)`**；进程级入口在 `bootstrap/streamlit_entry.py`。
 
 ### 2.6 `bootstrap/` — 组装层
@@ -171,6 +175,11 @@ SnapTranslate重构/
 12. **同一份结果，两种呈现口径**（F8）：`TranslationResult.display_text`（带 `（X 最快返回）`）
     给日志/翻译记录/对拍，`card_text`（干净译文）给浮层与"收录生词本"。
     也就是说**可观测性不牺牲用户界面**：想知道谁返回的，看控制台与翻译记录。
+13. **"状态变了就必须重绘"是控制器的不变式**（F9 / #28）：复习面板的评分走
+    `CardController.apply_grade()` → 用例推进会话 → 控制器自己调 `show()` 重绘。
+    分层把"谁负责重绘"推给了控制器，就不能再依赖调用方记得补一句 `_show_card()`——
+    这个坑已经踩过一次（阶段一漏搬原版 `_advance_after_grade()` 末尾那一行），
+    现在由 `gui_smoke --with-tk` 的真实 Tk 断言（界面词 = 会话词）兜住。
 
 ## 5. 验证策略
 
@@ -178,9 +187,9 @@ SnapTranslate重构/
 |---|---|---|
 | 语法/导入 | `python scripts/smoke_check.py` | 全包编译 + 分层导入 + 依赖装配 + 关键纯函数 |
 | 分层约束 | `python scripts/check_layering.py` | 依赖方向、禁止跨层 import（AST 静态校验） |
-| 单元测试 | `python -m unittest discover -s tests -t .`（或 `pytest tests`） | 评分、复习会话、清洗、热键解析、翻译响应解析、词表 IO 三种语义、设置两种写语义、备份、用例编排、表示层纯逻辑 |
+| 单元测试 | `python -m unittest discover -s tests -t .`（或 `pytest tests`） | 评分、复习会话、**复习卡片控制器**、清洗、热键解析、翻译响应解析、词表 IO 三种语义、设置两种写语义、备份、用例编排、表示层纯逻辑 |
 | 与原版逐函数对拍 | `python scripts/parity_check.py <原版目录>` | 纯函数 + **流程级**（文本翻译主链路、生词收录分支），当前 173 项 0 差异 |
-| Tk 界面冒烟 | `python scripts/gui_smoke.py --with-tk` | 真实创建三个窗口（构造后立即销毁，不进 mainloop） |
+| Tk 界面冒烟 | `python scripts/gui_smoke.py --with-tk` | 真实创建三个窗口（构造后立即销毁，不进 mainloop）+ **事件链断言**（热键即时同步、卡片锚点/不自动消失/输入关闭、代理即时生效、**评分后卡片前进**） |
 | Streamlit 结构对拍 | `python scripts/web_smoke.py` | 用官方 `AppTest` 渲染新页面并与原版逐项比较标题/按钮/下拉框/输入框/小标题 |
 
 > 这些脚本都是"可执行的约束"：分层违规、行为漂移、装配断裂、界面建不起来都会让命令非 0 退出。

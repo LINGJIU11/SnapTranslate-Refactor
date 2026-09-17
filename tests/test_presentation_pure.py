@@ -9,7 +9,12 @@ import unittest
 
 from snaptranslate.application.dto import CollectKind, DeleteKind, ErrorKind
 from snaptranslate.application.progress import Stage
+from snaptranslate.application.review import ReviewUseCase
+from snaptranslate.application.vocabulary_target import VocabularyTarget
 from snaptranslate.domain.models.hotkey import DEFAULT_HOTKEYS
+from snaptranslate.domain.models.review import Grade, SortMode
+from snaptranslate.domain.models.vocab_entry import Vocabulary
+from snaptranslate.domain.services.review_session import ReviewSession
 from snaptranslate.presentation.texts import (
     AdminText,
     CollectText,
@@ -18,10 +23,9 @@ from snaptranslate.presentation.texts import (
     StatusText,
     WindowText,
 )
+from snaptranslate.presentation.tk.card_controller import CardController
 from snaptranslate.presentation.tk.hotkey_controls import HotkeyManager
 from snaptranslate.presentation.tk.translate_transcript import RecentList
-
-from snaptranslate.domain.models.review import Grade
 
 
 class StatusTextTests(unittest.TestCase):
@@ -226,6 +230,169 @@ class HotkeyManagerTests(unittest.TestCase):
         self.assertEqual(bindings["translate"].label, "CTRL+L")
         self.assertEqual(bindings["snip"].modifier, "tab")
         self.assertEqual(bindings["save_last"].key, "e")
+
+
+# —————————————————————— 复习卡片控制器：评分后必须重绘 ——————————————————————
+
+
+class _FakeVar:
+    """够用的 ``tk.StringVar`` 替身（控制器只会 ``set``，测试里再读回来）。"""
+
+    def __init__(self, value: str = "") -> None:
+        self.value = value
+
+    def set(self, value: object) -> None:
+        self.value = str(value)
+
+    def get(self) -> str:
+        return self.value
+
+
+class _FakeRepo:
+    def __init__(self, items: list[dict], *, fail: bool = False) -> None:
+        self._items = [dict(i) for i in items]
+        self._fail = fail
+        self.saved: list[list[dict]] = []
+
+    def load_tolerant(self) -> list[dict]:
+        return [dict(i) for i in self._items]
+
+    def save(self, items: list[dict]) -> None:
+        if self._fail:
+            from snaptranslate.domain.errors import VocabularyIoError
+
+            raise VocabularyIoError("磁盘已满")
+        self.saved.append([dict(i) for i in items])
+        self._items = [dict(i) for i in items]
+
+
+class _FakeTts:
+    def speak(self, text: str, *, volume: int, prefer_en: bool, timeout_sec: float) -> None:
+        return None
+
+
+class _FakeBackup:
+    def create(self, *args: object, **kwargs: object) -> object:
+        raise AssertionError("复习评分不应该触发备份")
+
+
+class _FakeForm:
+    def __init__(self) -> None:
+        self.cleared = 0
+        self.reveal_calls: list[bool] = []
+        self.rendered = 0
+
+    def clear_example(self) -> None:
+        self.cleared += 1
+
+    def refresh_reveal_ui(self, show_example: bool) -> None:
+        self.reveal_calls.append(show_example)
+
+    def render_example(self, entry: object, reveal: object) -> None:
+        self.rendered += 1
+
+
+class _FakeSpeak:
+    def __init__(self) -> None:
+        self.cards: list[str] = []
+
+    def speak_for_card(self, entry: object, mode: str, volume: int) -> None:
+        self.cards.append(getattr(entry, "word", ""))
+
+    def speak_example(self, entry: object, volume: int) -> None:
+        return None
+
+
+class _FakeRef:
+    def __init__(self, vocabulary: Vocabulary, mode: SortMode) -> None:
+        self.vocabulary = vocabulary
+        self.session = ReviewSession(vocabulary, mode)
+
+
+class CardControllerGradeTests(unittest.TestCase):
+    """回归：点「认识 / 模糊 / 不认识」之后，卡片必须画到**下一张**。
+
+    原版 ``vocab_review.py:718-732`` 的 ``_advance_after_grade()`` 末尾就是 ``self._show_card()``；
+    阶段一重构时这一句掉了，界面会停在旧卡（词 / 熟练度 / 进度 / 释义全是旧的），
+    而评分已经落到看不见的下一个词上，见 ``KNOWN_ISSUES.md`` #28。
+    """
+
+    def _build(self, *, fail: bool = False, count: int = 3):
+        words = ["alpha", "bravo", "charlie", "delta", "echo"][:count]
+        items = [{"word": w, "meaning": f"{w} 的释义", "score": 50.0, "reviews": 0} for w in words]
+        repo = _FakeRepo(items, fail=fail)
+        vocabulary = Vocabulary(repo.load_tolerant())
+        target = VocabularyTarget("vocab.json", lambda _path: repo)
+        use_case = ReviewUseCase(target, _FakeTts(), _FakeBackup())
+        ref = _FakeRef(vocabulary, SortMode.SCORE_ASC)
+        form, speak = _FakeForm(), _FakeSpeak()
+        logged: list[tuple] = []
+        failed: list[BaseException] = []
+        controller = CardController(
+            ref,
+            form,
+            speak,
+            progress_var=_FakeVar(),
+            score_var=_FakeVar(),
+            word_var=_FakeVar(),
+            meaning_var=_FakeVar(),
+            grade_use_case=use_case,
+            on_grade_logged=lambda *args: logged.append(args),
+            on_save_failed=failed.append,
+            score_max=100.0,
+        )
+        return controller, ref, form, logged, failed
+
+    def test_grade_repaints_next_card(self) -> None:
+        controller, ref, form, logged, _failed = self._build()
+        controller.show("none", 100)
+        self.assertEqual(controller._word_var.value, "alpha")
+
+        controller.apply_grade(Grade.KNOW, "none", 100)
+
+        current = ref.session.current()
+        self.assertIsNotNone(current)
+        self.assertEqual(controller._word_var.value, current.word)  # 界面与会话一致
+        self.assertEqual(controller._word_var.value, "bravo")  # 真的换了下一张
+        self.assertEqual(controller._meaning_var.value, ReviewText.MEANING_PLACEHOLDER)
+        self.assertEqual(form.cleared, 2)  # 显示时 + 评分重绘时各清一次例句框
+        self.assertEqual(len(logged), 1)
+        self.assertIn("alpha", logged[0][2])
+
+    def test_grade_repaint_resets_reveal_and_respeaks(self) -> None:
+        controller, ref, _form, _logged, _failed = self._build()
+        controller.show("none", 100)
+        controller.toggle_meaning()
+        self.assertTrue(ref.session.reveal.show_meaning)
+
+        controller.apply_grade(Grade.KNOW, "word", 100)
+
+        self.assertFalse(ref.session.reveal.show_meaning)  # 会话侧已重置
+        self.assertEqual(controller._meaning_var.value, ReviewText.MEANING_PLACEHOLDER)  # 界面侧也擦了
+        self.assertEqual(controller._speak.cards, ["alpha", "bravo"])  # 重绘会按模式朗读新卡
+
+    def test_failed_save_keeps_card_and_position(self) -> None:
+        controller, ref, form, logged, failed = self._build(fail=True)
+        controller.show("none", 100)
+
+        controller.apply_grade(Grade.KNOW, "none", 100)
+
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(logged, [])
+        self.assertEqual(controller._word_var.value, "alpha")  # 不重绘
+        self.assertEqual(ref.session.position, 0)  # 也不前进（原版语义）
+        self.assertEqual(form.cleared, 1)
+
+    def test_unknown_grade_does_nothing(self) -> None:
+        controller, ref, form, logged, failed = self._build()
+        controller.show("none", 100)
+
+        controller.apply_grade("nonsense", "none", 100)
+
+        self.assertEqual(controller._word_var.value, "alpha")
+        self.assertEqual(ref.session.position, 0)
+        self.assertEqual(form.cleared, 1)
+        self.assertEqual((logged, failed), ([], []))
 
 
 if __name__ == "__main__":

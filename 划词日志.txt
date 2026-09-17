@@ -1,6 +1,0 @@
-[18:56:18] 未找到 vocab.json，跳过备份
-[18:56:45] 取词失败：Ctrl+C 未生效（已放弃翻译，未使用剪贴板旧内容）
-[18:56:50] These release notes were generated using GitHub Copilot and might contain inaccuracies => 这些发行说明是使用 GitHub Copilot 生成的，可能包含不准确之处
-（Google（clients5） 最快返回）
-[18:57:04] VS Code is rolling out gradually to all users. Use Check for Updates in VS Code to get the latest version immediately. => VS Code 正在逐步向所有用户推出。使用 VS Code 中的“检查更新”立即获取最新版本。
-（Google（clients5） 最快返回）
