@@ -1,12 +1,24 @@
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 build/
 dist/
-.pytest_cache/
-.tmp-tests/
 .venv/
 venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
 
 # 运行期数据（用户数据，不入库；默认数据目录为工程根目录）
 backups/
@@ -18,3 +30,10 @@ vocab.json.tmp
 api_key.txt.tmp
 # 取词日志：每次运行都会追加，且运行中的程序会一直持有句柄（备份/打包时会被锁）
 划词日志.txt
+
+# 临时/中间产物（测试与脚本自建，或备份压缩包）
+.tmp-tests/
+.tmp-gui-smoke-review/
+.tmp-diag-review-*/
+*.tmp
+*.zip
