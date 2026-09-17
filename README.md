@@ -118,6 +118,27 @@ python scripts\verify_all.py                  # 上面六项一次跑完，任�
 
 ---
 
+## 版本与标签
+
+按交付阶段打了标签，换电脑时可以直接检出某个阶段的状态看差异：
+
+| 标签 | 内容 |
+|---|---|
+| `stage1-refactor` | 阶段一：纯结构重构交付（116 模块，行为等价基线） |
+| `stage1.1-capture-fix` | 取词失败不再静默翻译剪贴板旧内容；改热键立即生效 |
+| `stage1.2-modifier-fix` | Alt 组合热键不再"毒化"注入的 Ctrl+C |
+| `stage1.3-floating-card` | 悬浮卡片按热键瞬间锚点显示 + 不再定时消失 |
+| `stage1.4-proxy` | 代理支持（直连 / 跟随系统 / 自定义） |
+| `stage1.5-prune-and-log-label` | 砍掉失效线路（竞速 5 路 → 2 路）；引擎标签只进日志 |
+| `stage1.6-review-advance-fix` | 复习界面评分后卡片前进（回归修复）+ 仓库整理 |
+
+```powershell
+git tag                     # 看全部标签
+git checkout stage1.5-prune-and-log-label   # 回到某个阶段
+```
+
+---
+
 ## 主要改进点（相对于 4 个裸脚本）
 
 | 方面 | 原版 | 现在 |
