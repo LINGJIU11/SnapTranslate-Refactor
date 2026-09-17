@@ -47,6 +47,7 @@
 
 ### 2.1 `config/` — 配置与常量（叶子）
 - `paths.py`：数据目录解析（默认=工程根目录，与原版"脚本同目录"一致）、各数据文件名（`vocab.json`/`api_key.txt`/`main_settings.json`/`vocab_review_settings.json`/`backups/`）、OCR/Tesseract 候选路径。
+- `proxy.py`：代理模式的取值约定（`off`/`system`/`custom`）、两个预设（本地 Clash 与香港出口）、URL 规范化——被基础设施、应用层、表示层同时使用，所以放叶子层。
 - `theme.py`：全部颜色与字体常量（原版在 `main.py` 与 `vocab_review.py` 各存了一份，现收敛为一份）。
 - `app.py`：应用名、版本、窗口标题文案。
 
@@ -68,7 +69,8 @@
 - `ocr/tesseract.py`：屏幕截取 + Tesseract 识别 + 语言包探测 + `TESSDATA_PREFIX` 处理。
 - `tts/windows_sapi.py`：PowerShell + `System.Speech` 朗读（阻塞/异步两种，与原版超时参数一致）。
 - `persistence/`：`json_vocabulary.py`（三种加载语义见 §4）、`json_settings.py`、`api_key_file.py`、`backup.py`。
-- `input/`：`win32_clipboard.py`、`win32_selection.py`（模拟 Ctrl+C 取词）、`win32_hotkeys.py`（`RegisterHotKey` 消息循环 + 轮询式监听器）、`win32_keys.py`（键名 → 虚拟键码表）。
+- `input/`：`win32_clipboard.py`、`win32_selection.py`（模拟 Ctrl+C 取词）、`win32_hotkeys.py`（`RegisterHotKey` 消息循环 + 轮询式监听器）、`win32_keys.py`（键名 → 虚拟键码表）、`win32_pointer.py`（鼠标位置）、`win32_input_watcher.py`（"任意键/鼠标键按下"轮询）、`win32_window.py`（抢前台）。
+- `network/`：`system_proxy.py`（读 Windows 系统代理）、`proxy_policy.py`（直连/跟随系统/自定义 + 私有地址直连）、`http.py`（统一 GET：`trust_env=False` + 显式 proxies + **代理失败回退直连**）。
 - `llm/deepseek.py`：OpenAI 兼容客户端 + 例句生成提示词 + 402 余额不足识别（原版在桌面端与 Web 端各写了一份）。
 
 ### 2.4 `application/` — 应用层（用例编排）
