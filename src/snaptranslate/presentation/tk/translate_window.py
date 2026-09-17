@@ -207,6 +207,9 @@ class TranslateApp:
         self._hotkeys.set(pending)
         self.hotkeys = self._hotkeys.hotkeys
         self.deps.settings.save_hotkeys(pending)
+        # 原版每轮轮询都重新读窗口上的热键，所以**改完立即生效**；监听器必须同步更新，
+        # 否则用户会以为"改了热键没反应"（重构阶段一漏了这一步，见 KNOWN_ISSUES.md #21）
+        self.deps.hotkey_listener.update_bindings(self._build_bindings())
         self._refresh_hotkey_hint()
         self._require_presenter().post_status_reset()
 

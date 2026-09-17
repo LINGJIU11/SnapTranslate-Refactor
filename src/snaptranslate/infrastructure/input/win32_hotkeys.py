@@ -39,19 +39,28 @@ class Win32PollingHotkeyListener:
         self._poll_interval = poll_interval
         self._thread: threading.Thread | None = None
         self._stopping = False
+        #: 当前生效的组合：界面改热键后由 ``update_bindings`` 替换，循环每轮重新读取
+        self._bindings: HotkeyBindings | None = None
+        self._bindings_lock = threading.Lock()
 
     # —— 端口实现 ——
     def start(self, bindings: HotkeyBindings, callbacks: HotkeyCallbacks) -> None:
         if self._thread is not None:
             return
+        self.update_bindings(bindings)
         self._stopping = False
         self._thread = threading.Thread(
             target=self._loop,
-            args=(bindings, callbacks),
+            args=(callbacks,),
             daemon=True,
             name="snaptranslate-hotkeys",
         )
         self._thread.start()
+
+    def update_bindings(self, bindings: HotkeyBindings) -> None:
+        """原版每轮重新读 ``self.hotkeys``，因此改热键**立即生效**；这里等价地替换快照。"""
+        with self._bindings_lock:
+            self._bindings = bindings
 
     def stop(self) -> None:
         self._stopping = True
@@ -61,7 +70,11 @@ class Win32PollingHotkeyListener:
             thread.join(timeout=1.0)
 
     # —— 内部 ——
-    def _loop(self, bindings: HotkeyBindings, callbacks: HotkeyCallbacks) -> None:
+    def _current_bindings(self) -> HotkeyBindings | None:
+        with self._bindings_lock:
+            return self._bindings
+
+    def _loop(self, callbacks: HotkeyCallbacks) -> None:
         prev_translate = False
         prev_snip = False
         prev_save = False
@@ -71,6 +84,10 @@ class Win32PollingHotkeyListener:
         prev_save_key = False
 
         while not self._stopping:
+            bindings = self._current_bindings()
+            if bindings is None:  # pragma: no cover - start() 之后不可能为空
+                time.sleep(self._poll_interval)
+                continue
             pressed_translate = self._is_hotkey_pressed(bindings.translate)
 
             if bindings.snip.modifier == "tab":
@@ -154,14 +171,29 @@ class Win32RegisteredHotkeyListener:
         self._thread: threading.Thread | None = None
         self._thread_id: int | None = None
         self._stopping = False
+        self._callbacks: HotkeyCallbacks | None = None
+        self._bindings: HotkeyBindings | None = None
 
     def start(self, bindings: HotkeyBindings, callbacks: HotkeyCallbacks) -> None:
-        del bindings  # 原版硬编码 Ctrl+L，不使用界面配置
         if self._thread is not None:
             return
+        self._callbacks = callbacks
+        self.update_bindings(bindings)
         self._stopping = False
         self._thread = threading.Thread(target=self._loop, args=(callbacks,), daemon=True)
         self._thread.start()
+
+    def update_bindings(self, bindings: HotkeyBindings) -> None:
+        """注册式监听器同样支持热更新：正在跑就按新组合重注册。
+
+        注意：``RegisterHotKey`` 不接受 ``tab`` 作为修饰键，这类组合只能走轮询监听器
+        （原版也正是因此才两套并存）。本类默认不装配，见 KNOWN_ISSUES.md #1。
+        """
+        self._bindings = bindings
+        if self._thread is not None and self._callbacks is not None:
+            callbacks = self._callbacks
+            self.stop()
+            self.start(bindings, callbacks)
 
     def stop(self) -> None:
         self._stopping = True
@@ -172,9 +204,15 @@ class Win32RegisteredHotkeyListener:
         if thread is not None:
             thread.join(timeout=1.0)
 
+    def _active_hotkey(self) -> Hotkey:
+        if self._bindings is None:
+            return self._hotkey
+        return self._bindings.translate
+
     def _loop(self, callbacks: HotkeyCallbacks) -> None:
+        hotkey = self._active_hotkey()
         self._thread_id = self._kernel32.GetCurrentThreadId()
-        if not self._user32.RegisterHotKey(None, self._hotkey_id, MOD_CONTROL, vk_from_key_token(self._hotkey.key)):
+        if not self._user32.RegisterHotKey(None, self._hotkey_id, MOD_CONTROL, vk_from_key_token(hotkey.key)):
             if callbacks.on_error is not None:
                 callbacks.on_error(self._error_message)
             return

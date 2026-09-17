@@ -60,7 +60,7 @@
   - `scoring.py`：`DEFAULT_SCORE / SCORE_MIN / SCORE_MAX / GRADE_DELTA`、`item_score`、`normalize_scores`、`apply_grade`。
   - `review_session.py`：复习会话状态机（顺序构建、当前位置、推进、评分），桌面端与 Web 端**共用同一实现**。
   - `text_cleaning.py`：`clean_text`、`is_likely_english`、`truncate`。
-- `ports/`：`translator.py`、`ocr.py`、`tts.py`、`vocabulary_repository.py`、`settings_repository.py`、`api_key_store.py`、`backup_writer.py`、`clipboard.py`、`selection_reader.py`、`hotkey_listener.py`、`example_generator.py`、`clock.py`。
+- `ports/`：`translator.py`、`ocr.py`、`tts.py`、`vocabulary_repository.py`、`settings_repository.py`、`api_key_store.py`、`backup_writer.py`、`clipboard.py`（含 `sequence()` 剪贴板版本号）、`selection_reader.py`（返回 `SelectionCapture`，见 §4.7）、`hotkey_listener.py`（含 `update_bindings()` 热更新）、`example_generator.py`、`clock.py`、`window.py`、`error_formatter.py`。
 - `errors.py`：`SnapTranslateError` 及领域错误（`TranslationError`、`OcrError`、`VocabularyIoError`、`ExampleGenerationError`）。
 
 ### 2.3 `infrastructure/` — 基础设施层（适配器实现端口）
@@ -146,6 +146,10 @@ SnapTranslate重构/
 4. **翻译竞速的"引擎标签"与缓存短路语义原样保留**：命中缓存时**不带**引擎标签，未命中竞速才带——这决定了界面上是否出现"（Google 最快返回）"，也决定了原版把标签写进生词本的行为，本轮**不改**（见 `KNOWN_ISSUES.md`）。
 5. **两端复习界面共用 `ReviewSession`**：原版桌面端与 Web 端各写了一份顺序/评分/推进逻辑，现收敛为领域服务，两端只做渲染。
 6. **唯一的新增能力**：数据目录可用环境变量 `SNAPTRANSLATE_DATA_DIR` 覆盖（默认值与"脚本同目录"完全一致，不设该变量时行为不变）。
+7. **取词结果必须能区分"取到了"与"没取到"**（阶段一之后的修复，见 `KNOWN_ISSUES.md` §五 F1）：
+   `SelectionReader` 返回 `SelectionCapture(text, copied, clipboard_text)`，调用方据此在
+   "Ctrl+C 未生效"时**放弃翻译**，而不是把剪贴板里的旧内容当原文——原版正是在这里把失败当成了成功，
+   于是出现"上次复制的网址 => 同一个网址"。
 
 ## 5. 验证策略
 

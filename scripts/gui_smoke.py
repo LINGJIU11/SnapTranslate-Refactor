@@ -93,6 +93,19 @@ def check_with_tk() -> None:
                 check(f"{name} 界面装配", False, f"{type(exc).__name__}: {exc}")
             root = getattr(app, "_root", None) or getattr(app, "root", None)
 
+        # KNOWN_ISSUES #21 的回归：界面改热键必须立即同步到监听器（原版每轮重新读热键）
+        if name == "TranslateApp":
+            try:
+                app.hotkey_translate_var.set("alt+z")
+                app.hotkey_snip_var.set("tab+q")
+                app.hotkey_save_var.set("tab+e")
+                app.on_apply_hotkeys()
+                bindings = getattr(app.deps.hotkey_listener, "_bindings", None)
+                synced = bindings is not None and bindings.translate.label == "ALT+Z"
+                check("改热键后监听器即时同步（无需重启）", synced, f"bindings={bindings}")
+            except Exception as exc:  # noqa: BLE001
+                check("改热键后监听器即时同步（无需重启）", False, f"{type(exc).__name__}: {exc}")
+
         if isinstance(root, tk.Misc):
             try:
                 root.withdraw()

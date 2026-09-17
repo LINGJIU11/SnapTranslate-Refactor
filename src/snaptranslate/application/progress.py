@@ -15,6 +15,8 @@ class Stage(str, Enum):
     """翻译/OCR 流程中会出现的中间状态。"""
 
     READING_SELECTION = "reading_selection"
+    #: 模拟 Ctrl+C 未生效（剪贴板没有变化）——原版没有这个状态，因为原版把失败当成了成功
+    CAPTURE_FAILED = "capture_failed"
     TRANSLATING = "translating"
     DONE = "done"
     FAILED = "failed"

@@ -21,6 +21,8 @@ class StatusText:
     #: 阶段 → (状态栏文案, 光标提示文案, 自动隐藏毫秒)
     STAGE_TEXT: dict[Stage, tuple[str | None, str, int | None]] = {
         Stage.READING_SELECTION: (None, "读取划词内容…", None),
+        #: 取词失败（Ctrl+C 未生效）——原版没有这个状态，见 KNOWN_ISSUES.md #20
+        Stage.CAPTURE_FAILED: (None, "取词失败：Ctrl+C 未生效", 2000),
         Stage.TRANSLATING: (None, "并发翻译中…", None),
         Stage.DONE: (None, "翻译完成", 1000),
         Stage.FAILED: (None, "翻译失败", 1500),
@@ -123,6 +125,19 @@ class WindowText:
     @staticmethod
     def no_selection_hint(hotkey_label: str) -> str:
         return f"未检测到选中文本，请先划词再按 {hotkey_label}"
+
+    @staticmethod
+    def capture_failed_hint(hotkey_label: str) -> str:
+        """取词失败（模拟 Ctrl+C 没有生效）时的提示。
+
+        新增文案（原版没有这个分支）：原版把这种情况当成"取到了内容"，于是把剪贴板里的
+        旧内容（例如上次复制的网址）当原文翻译，用户只会看到"网址 => 网址"。见 KNOWN_ISSUES.md #20。
+        """
+        return (
+            "取词失败：模拟 Ctrl+C 没有生效，本次已放弃翻译（没有拿剪贴板里的旧内容顶替）。"
+            f"当前热键：{hotkey_label}。常见原因：① 该热键被浏览器/系统占用（例如 Ctrl+L 在浏览器里是"
+            "聚焦地址栏）；② 该区域禁止复制（PDF 阅读器、图片、跨域 iframe）；③ 选区已丢失。"
+        )
 
     #: 原 ``main.py:1171`` 传给 ``_translate_text_job`` 的 ``no_text_hint``
     NO_SNIP_TEXT_HINT = "截图区域未识别到文字，请重试更清晰区域"

@@ -121,6 +121,7 @@ class TranslateJobRunner:
         outcome = use_case.execute(
             progress=self._progress_reporter(),
             no_text_hint=WindowText.no_selection_hint(self._sink.hotkey_label(ACTION_TRANSLATE)),
+            capture_failed_hint=WindowText.capture_failed_hint(self._sink.hotkey_label(ACTION_TRANSLATE)),
         )
         self._sink.post_status_reset()
         self.handle_outcome(outcome)
@@ -172,6 +173,10 @@ class TranslateJobRunner:
             return
         message = outcome.error_message or ""
         if outcome.kind is OutcomeKind.NO_TEXT:
+            if outcome.capture_failed:
+                # 新增：取词失败时打一行控制台日志便于排查（原版失败分支不打印任何东西，
+                # 而且根本区分不出"没取到词"与"取到了剪贴板里的旧内容"）。见 KNOWN_ISSUES.md #20。
+                self._log_line("取词失败：Ctrl+C 未生效（已放弃翻译，未使用剪贴板旧内容）")
             self._post_error(ErrorTitle.HINT, message)
         elif outcome.error_kind is ErrorKind.OCR_UNAVAILABLE:
             self._post_error(ErrorTitle.OCR_UNAVAILABLE, message)

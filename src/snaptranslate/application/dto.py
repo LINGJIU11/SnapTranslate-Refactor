@@ -40,6 +40,8 @@ class TranslationOutcome:
     truncated: bool = False
     error_kind: ErrorKind | None = None
     error_message: str | None = None
+    #: 取词阶段失败（Ctrl+C 未生效）——用于让表示层给出针对性的提示与调试输出
+    capture_failed: bool = False
 
     @property
     def ok(self) -> bool:

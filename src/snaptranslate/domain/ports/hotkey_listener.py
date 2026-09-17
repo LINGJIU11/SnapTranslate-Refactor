@@ -39,6 +39,14 @@ class HotkeyListener(Protocol):
         """启动监听（非阻塞）。"""
         ...
 
+    def update_bindings(self, bindings: HotkeyBindings) -> None:
+        """更新监听中的组合，**无需重启程序**。
+
+        原版 ``_tab_combo_loop`` 每轮都重新读取窗口上的热键字符串，因此"界面改热键 →
+        立即生效"；监听器必须提供等价能力，否则用户改完热键会以为程序坏了。
+        """
+        ...
+
     def stop(self) -> None:
         """停止监听并释放系统资源。"""
         ...

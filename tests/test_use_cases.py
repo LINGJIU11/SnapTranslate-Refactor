@@ -37,6 +37,7 @@ from snaptranslate.domain.errors import (
     VocabularyIoError,
 )
 from snaptranslate.domain.models.geometry import BBox
+from snaptranslate.domain.models.selection import SelectionCapture
 from snaptranslate.domain.models.translation import TranslationResult
 from snaptranslate.domain.models.vocab_entry import Vocabulary
 from snaptranslate.domain.ports.backup_writer import BackupResult
@@ -115,13 +116,17 @@ class FakeTranslator:
 
 
 class FakeSelection:
-    def __init__(self, text: str) -> None:
+    """假取词器：可模拟"取到了"与"Ctrl+C 没生效"两种结果。"""
+
+    def __init__(self, text: str, *, copied: bool = True, clipboard_text: str = "") -> None:
         self._text = text
+        self._copied = copied
+        self._clipboard_text = clipboard_text
         self.calls = 0
 
-    def read_selected_text(self) -> str:
+    def read_selected_text(self) -> SelectionCapture:
         self.calls += 1
-        return self._text
+        return SelectionCapture(text=self._text, copied=self._copied, clipboard_text=self._clipboard_text)
 
 
 class FakeOcr:
@@ -287,18 +292,56 @@ class TranslateTextUseCaseTests(unittest.TestCase):
 
 
 class TranslateSelectionUseCaseTests(unittest.TestCase):
-    def test_reads_selection_then_translates(self) -> None:
-        selection = FakeSelection("hello")
+    def _use_case(self, selection: FakeSelection):
         translator = FakeTranslator(TranslationResult("你好"))
-        use_case = TranslateSelectionUseCase(
+        return TranslateSelectionUseCase(
             selection,
             TranslateTextUseCase(lambda s: translator, lambda: "google", FakeTts(), RaisingFormatter()),
-        )
+        ), translator
+
+    def test_reads_selection_then_translates(self) -> None:
+        selection = FakeSelection("hello")
+        use_case, _translator = self._use_case(selection)
         recorder = Recorder()
         outcome = use_case.execute(progress=recorder.progress, no_text_hint="x")
         self.assertTrue(outcome.ok)
         self.assertEqual(selection.calls, 1)
         self.assertEqual(recorder.cursors[0], Stage.READING_SELECTION)
+
+    def test_capture_failure_does_not_translate_stale_clipboard(self) -> None:
+        """回归：Ctrl+C 未生效时，**绝不能**拿剪贴板里的旧内容去翻译（原版 bug）。"""
+        selection = FakeSelection("", copied=False, clipboard_text="https://code.visualstudio.com/updates/v1_138")
+        use_case, translator = self._use_case(selection)
+        recorder = Recorder()
+        outcome = use_case.execute(
+            progress=recorder.progress,
+            no_text_hint="没有取到文本",
+            capture_failed_hint="取词失败提示",
+        )
+        self.assertIs(outcome.kind, OutcomeKind.NO_TEXT)
+        self.assertTrue(outcome.capture_failed)
+        self.assertEqual(outcome.error_message, "取词失败提示")
+        self.assertEqual(outcome.source_text, "")
+        self.assertEqual(translator.seen, [])  # 翻译器一次都没被调用
+        self.assertIn(Stage.CAPTURE_FAILED, recorder.cursors)
+
+    def test_capture_failure_without_hint_falls_back_to_no_text_hint(self) -> None:
+        selection = FakeSelection("", copied=False, clipboard_text="https://example.com")
+        use_case, _translator = self._use_case(selection)
+        outcome = use_case.execute(progress=Recorder().progress, no_text_hint="没有取到文本")
+        self.assertEqual(outcome.error_message, "没有取到文本")
+        self.assertTrue(outcome.capture_failed)
+
+    def test_copied_but_empty_text_uses_no_text_path(self) -> None:
+        """复制成功但内容为空（例如空白选区）：走原有的"没取到文本"路径，且不算取词失败。"""
+        selection = FakeSelection("", copied=True)
+        use_case, translator = self._use_case(selection)
+        recorder = Recorder()
+        outcome = use_case.execute(progress=recorder.progress, no_text_hint="没有取到文本")
+        self.assertIs(outcome.kind, OutcomeKind.NO_TEXT)
+        self.assertFalse(outcome.capture_failed)
+        self.assertEqual(outcome.error_message, "没有取到文本")
+        self.assertEqual(translator.seen, [])
 
 
 class TranslateScreenshotUseCaseTests(unittest.TestCase):
