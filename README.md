@@ -116,6 +116,14 @@ python scripts\verify_all.py                  # 上面六项一次跑完，任�
 
 六者都是"可执行的约束"：分层违规、行为漂移、装配断裂、界面建不起来都会让命令非 0 退出。
 
+> **对拍需要原版目录**（默认 `C:\Translate\SnapTranslate`）。换电脑后如果没克隆上游，
+> 对拍会自己打印 `[SKIP] 未找到原版目录…`，`verify_all.py` 汇总里也会如实标成 `[SKIP]`（不算失败）。
+> 想跑真对拍就先克隆上游：
+>
+> ```powershell
+> git clone https://github.com/ChenAI-TGF/SnapTranslate.git C:\Translate\SnapTranslate
+> ```
+
 ---
 
 ## 版本与标签
