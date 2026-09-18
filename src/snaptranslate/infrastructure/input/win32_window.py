@@ -30,6 +30,18 @@ class Win32WindowActivator:
         except Exception:
             return 0
 
+    def find_window(self, title: str) -> int:
+        """按窗口标题（精确匹配）查句柄；找不到返回 0。
+
+        新增功能"启动器"用它判断子窗口是否已开、以及把它唤到前台。
+        """
+        if not title:
+            return 0
+        try:
+            return int(self._user32.FindWindowW(None, title))
+        except Exception:
+            return 0
+
     def force_foreground(self, hwnd: int) -> None:
         if hwnd <= 0:
             return

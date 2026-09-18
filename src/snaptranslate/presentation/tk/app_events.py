@@ -307,10 +307,12 @@ class TranslateJobRunner:
 
         self._sink.post(apply)
 
-    @staticmethod
-    def _log_line(message: str) -> None:
-        """控制台日志，格式与原版 ``print(f"[{time.strftime('%H:%M:%S')}] ...")`` 一致。"""
-        print(f"[{time.strftime('%H:%M:%S')}] {message}")
+    def _log_line(self, message: str) -> None:
+        """控制台/文件日志，格式与原版 ``print(f"[{time.strftime('%H:%M:%S')}] ...")`` 一致。
+
+        打包成窗口程序后没有控制台，所以统一走 ``log_sink``（控制台 + 数据目录日志文件）。
+        """
+        self._deps.log_sink.write(f"[{time.strftime('%H:%M:%S')}] {message}")
 
 
 __all__ = [

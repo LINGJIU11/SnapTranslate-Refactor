@@ -87,7 +87,7 @@ SnapTranslate重构/
 │   ├─ application/       用例编排 + 依赖包（只依赖端口）
 │   ├─ presentation/      Tk 窗口、Streamlit 页面、统一文案表
 │   └─ bootstrap/         组合根：容器、装配、CLI 与 Streamlit 进程入口
-└─ tests/                 232 个单元测试（含分层约束、GUI 事件链与浮层几何回归）
+└─ tests/                 252 个单元测试（含分层约束、GUI 事件链、浮层几何、打包路径与启动器）
 ```
 
 依赖方向（`scripts/check_layering.py` 会静态校验，违反即失败）：
@@ -106,7 +106,7 @@ presentation → application → domain
 
 ```powershell
 python scripts\check_layering.py              # 分层依赖方向（AST 静态检查）
-python -m unittest discover -s tests -t .     # 单元测试（232 项）
+python -m unittest discover -s tests -t .     # 单元测试（252 项）
 python scripts\smoke_check.py                 # 全包导入 + 依赖装配 + 关键纯函数
 python scripts\parity_check.py <原版目录>       # 与原版逐函数/流程对拍（173 项，默认 C:\Translate\SnapTranslate）
 python scripts\gui_smoke.py --with-tk         # 真实创建三个 Tk 窗口后立即销毁（含事件链断言）
@@ -151,10 +151,10 @@ git checkout stage1.5-prune-and-log-label   # 回到某个阶段
 
 | 方面 | 原版 | 现在 |
 |---|---|---|
-| 文件组织 | 4 个巨型脚本（`main.py` 1918 行） | 123 个 60–300 行的单职责模块，按层分目录 |
+| 文件组织 | 4 个巨型脚本（`main.py` 1918 行） | 136 个 60–300 行的单职责模块，按层分目录 |
 | 依赖关系 | 全局常量 + 模块级函数互相调用 | 六层单向依赖 + 端口/适配器，静态可校验 |
 | 重复实现 | 词表 IO / 评分 / 热键 / 例句解析 / 主题色各写 2–4 份 | 收敛为单一实现（**语义差异显式命名**，不偷偷合并） |
-| 可测试性 | 逻辑与 Tk/网络耦合，无法单测 | 用例层依赖 Protocol，232 个测试用假适配器跑，不联网不起 GUI |
+| 可测试性 | 逻辑与 Tk/网络耦合，无法单测 | 用例层依赖 Protocol，252 个测试用假适配器跑，不联网不起 GUI |
 | 界面文案 | 散落在业务逻辑里 | 集中在 `presentation/texts.py`，两端共用 |
 | 入口 | 必须 `python xxx.py` 且依赖当前目录 | 薄壳入口 + console_scripts + 数据目录可配置 |
 | 行为验证 | 无 | 与原版逐函数对拍脚本（173 项） |
@@ -174,6 +174,32 @@ git checkout stage1.5-prune-and-log-label   # 回到某个阶段
 | **中译英输入框** | `ctrl+i` | 弹出浮层，上格输入中文、下格显示英文；回车翻译，中文留在输入框；翻译完把键盘焦点还给原窗口，再按任意键即关；**鼠标点在框内不算关**，而是继续下一次输入；Esc 关闭 |
 
 ```powershell
-# 试一下：启动后按 ctrl+i，输入「你好，世界」，回车
-python entrypoints\main.py
+# 试一下：启动控制台（新增功能），点按钮或按托盘菜单切换三个窗口
+python entrypoints\launcher.py
+
+# 或者直接起某一个窗口
+python entrypoints\main.py                     # 划词翻译（按 ctrl+i 试试中译英输入框）
 ```
+
+---
+
+## 打包成 exe（便携版）
+
+```powershell
+pip install pyinstaller                       # PyInstaller ≥ 6.15 才支持 Python 3.14
+python scripts\build_packages.py              # 主包：启动器 + 托盘 + 三个 Tk 应用（约 52 MB）
+python scripts\build_packages.py --web        # 再加一个含 streamlit 的 Web 包（约 172 MB）
+```
+
+产物在 `dist/`，**数据跟着 exe**（`vocab.json` / 设置 / `backups/` / 日志 / 自检报告都在 exe 同级目录），
+所以"迁移 = 整个文件夹拷走"。打完会自动跑一遍 `SnapTranslate.exe --self-check` 验收。
+
+| 启动方式 | 作用 |
+|---|---|
+| `SnapTranslate.exe` | 控制台窗口（三个入口按钮 + 常驻托盘） |
+| `SnapTranslate.exe --app=translate` | 划词翻译 |
+| `SnapTranslate.exe --app=review` | 生词复习 |
+| `SnapTranslate.exe --app=admin` | 词表管理 |
+| `SnapTranslate.exe --self-check` | 自检（报告写 `self-check.txt`） |
+
+细节（为什么分两个包、单实例、托盘、图标、未签名提醒）见 `packaging/README.md`。

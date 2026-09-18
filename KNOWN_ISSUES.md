@@ -128,7 +128,11 @@
 - 位置：`infrastructure/ocr/tesseract.py`（语言包探测、`.traineddata` 扫描、`TESSDATA_PREFIX` 修正逻辑全部保留）。
 - 影响：装不上或路径被旧版本劫持时，只能看到"OCR 不可用 / 未找到可用语言包"。
 
-### #17 无日志文件、无单实例、无异常上报 `[保留]`
+### #17 无日志文件、无单实例、无异常上报 `[部分已修 → 见 §七 N2]`
+- 位置：全局（原版无处可寻 = 缺失能力）。
+- 现状：**日志已落文件**（`基础设施/persistence/append_log.py` 写数据目录 `划词日志.txt`，
+  打包成窗口程序后没有控制台，这是必须的）；**单实例已实现**（启动器用命名互斥量，
+  第二个实例唤起已有窗口后退出）；异常上报仍未做（崩溃只在进程内/日志里可见）。
 - 运行期只有 `print`（划词窗口）与界面日志区；崩溃无痕迹。
 
 ---
@@ -154,6 +158,7 @@
 | — | **F9（#28）不属于偏差**：复习界面"评分后卡片不前进"是**阶段一引入的回归**，修复只是把原版行为补回来 | 见 §五 F9；原版 `_advance_after_grade()` 末尾本来就有 `_show_card()` |
 | D15 | **新增功能（中译英输入框）**：第 4 组热键 `input`（默认 `ctrl+i`）+ 界面上的第 4 个输入框；标题提示行与状态栏文案多一段"中译英"；"快捷键不能重复"由"3 组"改为"**4 组**" | 用户要求的新功能，见 §七；`DEFAULT_HOTKEYS`（原版三组）保持不动，`feature_hotkeys()` 才是程序完整默认值；老设置文件只补 `input`，其余三组不改 |
 | D16 | **翻译端口多了一个方向参数**：`Translator.translate(text, direction=AUTO_TO_CHINESE)`（引擎 URL 与缓存键随方向变化） | 见 §七；默认值等价于原版"自动 → 简体中文"，因此划词/截图两条路径的请求与缓存键**一字未变**（对拍 173 项仍 0 差异） |
+| D17 | **打包后数据目录取 exe 所在目录**（`sys.frozen` 时不再按 `__file__` 反推） | 见 §七 N2；`--onefile` 下按 `__file__` 反推会写进临时解包目录、退出即丢；源码运行的行为不变 |
 
 ---
 
@@ -360,3 +365,36 @@
   `tests/test_translation_infra.py`（方向解析 / 缓存隔离 / 竞速透传 4 项）、
   `tests/test_presentation_pure.py`（`OverlayGeometryTests` 3 项 + 热键四组 2 项）、
   `scripts/gui_smoke.py --with-tk`（输入框 12 条 + 四组热键 2 条真实 Tk 断言）
+
+### N2 启动器 / 托盘常驻 / 打包成 exe（`[新增]`）
+- **能力**：
+  1. **一个 exe 分发四个窗口**：`SnapTranslate.exe`（控制台 + 托盘）、`--app=translate|review|admin|web`、
+     `--self-check`（打包产物自检）；
+  2. **控制台窗口**：三个入口按钮 + 每个子窗口"运行中/未运行" + 打开数据目录 + 退出；
+  3. **托盘常驻**：右键菜单切换三个窗口、双击回控制台；勾选时关窗只隐藏；退出会一并结束子进程；
+  4. **单实例**：每个子应用一个命名互斥量，第二个实例把已开窗口唤到前台后立刻退出；
+  5. **打包**：主包约 52 MB（刻意排除 streamlit），Web 包约 195 MB（**实验性**，见文末遗留）。
+- **为什么用"自派发子进程"而不是把三个窗口塞进一个进程**：三个窗口代码**一行都不用改**，
+  现有 252 项测试与 gui_smoke 门禁继续有效；隔离性好；热键监听只有划词子进程一份。
+  代价：三个窗口 = 三个进程（约 100 MB 内存），窗口间不共享内存（词表变更要重开窗口才可见）。
+- **打包时踩到并修掉的三件事**（都是"源码跑得好、打包就坏"的典型）：
+  1. **`config/paths.py` 的 `_PROJECT_ROOT = parents[3]`**：`--onefile` 下指向临时解包目录，
+     数据会写进临时目录、退出即丢 → 改为 `sys.frozen` 时取 **exe 所在目录**（便携，偏差 D17）；
+  2. **裸 `print` 日志**：`console=False` 后 `sys.stdout` 是 `None`，第一次产物的 `--self-check`
+     就是这样**静默失败**的 → 引入 `LogSink` / `AppendOnlyLog` 写数据目录的 `划词日志.txt`，
+     自检报告另落 `self-check.txt`（顺带补上 §三 #17 的"无日志文件"）；
+  3. **单实例缺失**（原版 #17）：热键是轮询式的，两个划词实例会同时响应同一次划词并互相覆盖 `vocab.json`
+     → 命名互斥量 + 唤起已有窗口。
+- **实测（打包产物）**：`--self-check` 退出码 0、全项通过；控制台窗口正常弹出；第二次启动被单实例挡住
+  （窗口句柄不变）；`--app=admin` / `--app=review` 都能起出标题正确的窗口并干净退出；
+  数据（`划词日志.txt` / `self-check.txt`）确实落在 exe 同级目录。
+- **代码**：`bootstrap/launcher.py`、`bootstrap/web_launcher.py`、`presentation/tk/launcher_window.py`、
+  `domain/models/launcher.py`、`domain/ports/{app_launcher,tray,single_instance,log_sink}.py`、
+  `infrastructure/input/{win32_tray,win32_single_instance}.py`、`infrastructure/process/app_processes.py`、
+  `infrastructure/persistence/append_log.py`、`config/paths.py`、`packaging/*`、`scripts/build_packages.py`
+- **回归测试**：`tests/test_paths.py`（6 项：源码/打包/环境变量/资源目录）、
+  `tests/test_launcher.py`（14 项：参数解析、子应用清单与窗口标题一致、唤起而不重复启动、连点不双开、退出收尾）、
+  `scripts/gui_smoke.py --with-tk`（LauncherApp 构造 / 三个入口齐全 / 托盘状态 / 关窗分支 / 退出清理）
+- **遗留**：Web 包（含 streamlit）**尚未验收**——服务能起、健康检查 200，但冻结后首页 `/` 仍 404
+  （streamlit 1.64 的静态资源路径在 PyInstaller 下没解析到），网页端暂时用源码运行；
+  细节与后续方向见 `packaging/README.md`。

@@ -19,6 +19,13 @@ class WindowActivator(Protocol):
         """
         ...
 
+    def find_window(self, title: str) -> int:
+        """按窗口标题查句柄；找不到返回 0。
+
+        **新增功能**（启动器）用它判断"某个子窗口是否已经开着"，以及把它唤到前台。
+        """
+        ...
+
     def force_foreground(self, hwnd: int) -> None:
         """把指定窗口推到前台（失败静默，与原版一致）。"""
         ...

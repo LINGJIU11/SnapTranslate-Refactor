@@ -297,6 +297,55 @@ def check_input_box() -> None:
         root.destroy()
 
 
+def check_launcher_panel() -> None:
+    """启动器控制台（新增功能）：真 Tk 构造 + 三个子应用按钮齐全 + 托盘可注册。"""
+    import shutil
+
+    from snaptranslate.application.deps import LauncherAppDeps
+    from snaptranslate.bootstrap.container import Container, DataPaths
+    from snaptranslate.bootstrap.launcher import launcher_items
+    from snaptranslate.infrastructure.process.app_processes import SubprocessAppLauncher
+    from snaptranslate.presentation.texts import LauncherText
+    from snaptranslate.presentation.tk.launcher_window import LauncherApp
+
+    tmp = ROOT / ".tmp-gui-smoke-launcher"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True, exist_ok=True)
+    try:
+        container = Container(DataPaths.under(str(tmp)))
+        items = launcher_items()
+        deps = LauncherAppDeps(
+            apps=items,
+            launcher=SubprocessAppLauncher(
+                items, command_prefix=["x"], activator=container.window_activator()
+            ),
+            tray=container.tray_icon(),
+            data_dir=str(tmp),
+            icon_path=str(ROOT / "assets" / "snaptranslate.ico"),
+            hotkey_label="CTRL+I",
+        )
+        app = LauncherApp(deps)
+        app.root.withdraw()
+        app.root.update_idletasks()
+        check("LauncherApp 构造", True)
+        check("三个子应用按钮齐全", len(items) == 3 and len(app._status_vars) == 3, f"{list(app._status_vars)}")
+        check(
+            "托盘状态已写进状态栏",
+            app.status_var.get() in (LauncherText.TRAY_HINT, LauncherText.TRAY_UNAVAILABLE),
+            f"status={app.status_var.get()!r}",
+        )
+        # 关窗：托盘可用时只隐藏（常驻），托盘不可用时真退出
+        app._on_close()
+        still_alive = not app._closing
+        check("关闭按'常驻托盘'分支处理", still_alive == app._tray_ready, f"tray={app._tray_ready} closing={app._closing}")
+        app.quit()
+        check("LauncherApp 退出清理", app._closing)
+    except Exception as exc:  # noqa: BLE001
+        check("LauncherApp 构造", False, f"{type(exc).__name__}: {exc}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def check_with_tk() -> None:
     print("\n=== 2. 真实 Tk 构造（--with-tk） ===")
     try:
@@ -388,6 +437,7 @@ def check_with_tk() -> None:
 
     check_review_advance()
     check_input_box()
+    check_launcher_panel()
 
 
 def main() -> int:

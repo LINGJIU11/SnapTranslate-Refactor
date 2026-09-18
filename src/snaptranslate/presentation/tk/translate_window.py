@@ -440,10 +440,13 @@ class TranslateApp:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    @staticmethod
-    def _log_line(message: str) -> None:
-        """控制台日志，格式与原版 ``print(f"[{time.strftime('%H:%M:%S')}] ...")`` 一致。"""
-        print(f"[{time.strftime('%H:%M:%S')}] {message}")
+    def _log_line(self, message: str) -> None:
+        """日志，格式与原版 ``print(f"[{time.strftime('%H:%M:%S')}] ...")`` 一致。
+
+        走依赖里的 ``log_sink``（控制台 + 数据目录日志文件）：打包成窗口程序后没有控制台，
+        原版的裸 ``print`` 会让用户看不到任何排查信息（见 KNOWN_ISSUES.md §八 N2）。
+        """
+        self.deps.log_sink.write(f"[{time.strftime('%H:%M:%S')}] {message}")
 
     def _require_runner(self) -> TranslateJobRunner:
         assert self._runner is not None

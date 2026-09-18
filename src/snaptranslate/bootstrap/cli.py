@@ -37,3 +37,11 @@ def review_web_main() -> None:
 
 def admin_main() -> None:
     run_admin_app(_data_dir_arg())
+
+
+def launcher_main() -> None:
+    """控制台 + 托盘常驻（新增功能；打包后的默认入口）。"""
+    from snaptranslate.bootstrap.launcher import main
+
+    raise SystemExit(main())
+

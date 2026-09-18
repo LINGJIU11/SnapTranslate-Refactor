@@ -23,6 +23,7 @@ snaptranslate = "snaptranslate.bootstrap.cli:translate_main"
 snaptranslate-review = "snaptranslate.bootstrap.cli:review_main"
 snaptranslate-review-web = "snaptranslate.bootstrap.cli:review_web_main"
 snaptranslate-admin = "snaptranslate.bootstrap.cli:admin_main"
+snaptranslate-panel = "snaptranslate.bootstrap.cli:launcher_main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0.0"]

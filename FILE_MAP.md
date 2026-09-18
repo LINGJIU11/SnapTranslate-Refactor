@@ -9,15 +9,15 @@
 
 | 层级 | 目录 | 文件 | 行数 | 职责 | 允许依赖 |
 |---|---|---|---|---|---|
-| L0 配置 | `src/snaptranslate/config/` | 5 | 116 | 路径解析、主题色、应用元信息、代理模式与预设 | 仅标准库 |
-| L1 领域 | `src/snaptranslate/domain/` | 31 | 933 | 模型、领域服务、17 个端口 Protocol、错误 | 标准库 + domain |
-| L2 基础设施 | `src/snaptranslate/infrastructure/` | 33 | 1578 | 2 条翻译线路（clients5 + MyMemory）与竞速、代理/HTTP 出口、Tesseract OCR、SAPI 朗读、JSON 持久化、Win32 输入、DeepSeek | + config |
-| L3 应用 | `src/snaptranslate/application/` | 15 | 887 | 9 个用例（含中译英输入框）+ 依赖包 + 进度/结果 DTO | + domain、config |
-| L4 表示 | `src/snaptranslate/presentation/` | 34 | 4364 | 文案总表 + Tk（`tk/` 26 文件）+ Streamlit（`web/` 6 文件） | + application |
-| L5 组装 | `src/snaptranslate/bootstrap/` | 5 | 296 | 容器（唯一装配点）、装配函数、CLI/Streamlit 进程入口 | 全部 |
-| — | 主包合计 | **123** | **8174** | | |
+| L0 配置 | `src/snaptranslate/config/` | 5 | 146 | 路径解析（含打包后取 exe 目录）、主题色、应用元信息、代理模式与预设 | 仅标准库 |
+| L1 领域 | `src/snaptranslate/domain/` | 36 | 1033 | 模型（含 `Direction`、`LauncherAppItem`）、领域服务、21 个端口 Protocol、错误 | 标准库 + domain |
+| L2 基础设施 | `src/snaptranslate/infrastructure/` | 38 | 2184 | 2 条翻译线路与竞速、代理/HTTP、OCR、朗读、JSON 持久化、日志落文件、Win32 输入（取词/热键/指针/输入监听/托盘/单实例）、子进程监管、DeepSeek | + config |
+| L3 应用 | `src/snaptranslate/application/` | 15 | 904 | 9 个用例 + 依赖包（含启动器依赖）+ 进度/结果 DTO | + domain、config |
+| L4 表示 | `src/snaptranslate/presentation/` | 35 | 4580 | 文案总表 + Tk（`tk/` 27 文件）+ Streamlit（`web/` 6 文件） | + application |
+| L5 组装 | `src/snaptranslate/bootstrap/` | 7 | 696 | 容器、装配、启动器（自派发/单实例/自检）、Web 冻结入口、CLI | 全部 |
+| — | 主包合计 | **136** | **9543** | | |
 
-外围：`entrypoints/`（4 个兼容入口）、`scripts/`（6 个门禁 + 3 个诊断脚本）、`tests/`（18 个文件 / 232 项测试）。
+外围：`entrypoints/`（5 个兼容入口，含 `launcher.py`）、`scripts/`（6 门禁 + 3 诊断 + 打包脚本）、`tests/`（18 个文件 / 252 项测试）、`packaging/`（PyInstaller spec 与说明）。
 
 粒度：单文件 60–300 行、单文件单职责。**唯一例外**是 `presentation/texts.py`（321 行，全部界面文案的唯一出口），已在 `ARCHITECTURE.md §3` 登记。
 
@@ -135,11 +135,15 @@
 | `application/translate_input.py` | **新增功能**：`TranslateInputUseCase`（用户手敲的中文 → 英文） |
 | `presentation/tk/input_box.py` | **新增功能**：`OverlayInputBox`（浮层输入/输出框：回车翻译、点框内复用、框外关闭） |
 | `presentation/tk/overlay_geometry.py` | 浮层共用几何：`place_near`（+16 偏移并夹在屏内）与 `is_inside`（卡片/输入框共用） |
+| `domain/models/launcher.py`、`domain/ports/{app_launcher,tray,single_instance,log_sink}.py` | **新增功能**：启动器要用的值对象与端口（子应用描述、启动/唤起、托盘、单实例、日志落点） |
+| `infrastructure/input/{win32_tray,win32_single_instance}.py`、`infrastructure/process/app_processes.py` | **新增功能**：`Shell_NotifyIcon` 托盘、命名互斥量单实例、子进程监管（启动/按标题唤起/退出收尾） |
+| `infrastructure/persistence/append_log.py` | **新增功能**：日志落文件（打包成窗口程序后没有控制台） |
+| `presentation/tk/launcher_window.py`、`bootstrap/{launcher,web_launcher}.py`、`packaging/*` | **新增功能**：启动器控制台、一个 exe 的自派发与自检、Web 包入口与 PyInstaller spec |
 | `presentation/texts.py` | 全部界面文案的唯一出口 |
 | `presentation/tk/translate_sink.py`、`app_events.py` | 线程安全的结果出口 + 热键→线程→用例编排（含"触发瞬间取锚点"） |
 | `infrastructure/input/win32_pointer.py`、`win32_input_watcher.py` | 鼠标位置（`GetCursorPos`）与"任意键/鼠标键按下"监听（浮层锚点与关闭，见 KNOWN_ISSUES #23/#24） |
 | `infrastructure/network/`（3 个）、`config/proxy.py`、`domain/ports/proxy.py` | 代理：系统代理读取、代理策略（直连/跟随系统/自定义）、带失败回退的 HTTP GET（见 KNOWN_ISSUES #25） |
 | `presentation/tk/translate_ui.py` | 面板与窗口壳的 Protocol 契约 |
 | `bootstrap/container.py` / `wiring.py` / `cli.py` / `streamlit_entry.py` | 组合根与四类进程入口 |
-| `scripts/*.py`（9 个） | 分层校验 / 对拍 / 冒烟 / Tk 冒烟 / Web 结构对拍 / 一键全跑 + 取词诊断 / 修饰键诊断 / 复习推进诊断 |
-| `tests/*`（18 个） | 232 项测试（含分层约束、代理、线路裁剪、复习卡片控制器、浮层几何与表示层纯逻辑） |
+| `scripts/*.py`（10 个） | 分层校验 / 对拍 / 冒烟 / Tk 冒烟 / Web 结构对拍 / 一键全跑 + 取词诊断 / 修饰键诊断 / 复习推进诊断 / 打包脚本 |
+| `tests/*`（18 个） | 252 项测试（含分层约束、代理、线路裁剪、复习卡片控制器、浮层几何、打包路径与启动器，以及表示层纯逻辑） |

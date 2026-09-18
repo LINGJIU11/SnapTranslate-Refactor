@@ -55,13 +55,14 @@
 - `models/`
   - `vocab_entry.py`：`VocabEntry`（对原始 dict 的**强类型视图**，保留未知字段与键序）、`Vocabulary`（词条集合，封装增删查与"待补例句"统计）。
   - `review.py`：`SortMode`、`Grade`、`RevealState` 等枚举与值对象。
-  - `translation.py`：`TranslationResult`（干净译文 `text` + 引擎标签 `engine_label` + 日志文本 `display_text` + 卡片文本 `card_text`；标签**只进日志**，见 §4.8）、`BBox`、`Language`。
+  - `translation.py`：`TranslationResult`（干净译文 `text` + 引擎标签 `engine_label` + 日志文本 `display_text` + 卡片文本 `card_text`；标签**只进日志**，见 §4.8）、`BBox`、`Language`、`Direction`（翻译方向，见 §4.14）。
+  - `launcher.py`：`LauncherAppItem`（启动器要管理的子应用描述：键名 / 按钮文字 / 说明 / 命令行参数 / 窗口标题）。放 domain 是因为 `infrastructure`（照单启动）与 `presentation`（显示）都要用它，而基础设施层不许 import application。
   - `hotkey.py`：`Hotkey`（解析 `ctrl+l` / `tab+q` 这类组合，纯字符串规则）。
 - `services/`
   - `scoring.py`：`DEFAULT_SCORE / SCORE_MIN / SCORE_MAX / GRADE_DELTA`、`item_score`、`normalize_scores`、`apply_grade`。
   - `review_session.py`：复习会话状态机（顺序构建、当前位置、推进、评分），桌面端与 Web 端**共用同一实现**。
   - `text_cleaning.py`：`clean_text`、`is_likely_english`、`truncate`。
-- `ports/`：`translator.py`、`ocr.py`、`tts.py`、`vocabulary_repository.py`、`settings_repository.py`、`api_key_store.py`、`backup_writer.py`、`clipboard.py`（含 `sequence()` 剪贴板版本号）、`selection_reader.py`（返回 `SelectionCapture`，见 §4.7）、`hotkey_listener.py`（含 `update_bindings()` 热更新）、`pointer.py`（鼠标位置，线程安全）、`input_watcher.py`（"任意键/鼠标键按下"监听，用于关闭浮层）、`proxy.py`（代理设置）、`example_generator.py`、`clock.py`、`window.py`、`error_formatter.py`。
+- `ports/`：`translator.py`、`ocr.py`、`tts.py`、`vocabulary_repository.py`、`settings_repository.py`、`api_key_store.py`、`backup_writer.py`、`clipboard.py`（含 `sequence()` 剪贴板版本号）、`selection_reader.py`（返回 `SelectionCapture`，见 §4.7）、`hotkey_listener.py`（含 `update_bindings()` 热更新）、`pointer.py`（鼠标位置，线程安全）、`input_watcher.py`（"任意键/鼠标键按下"监听，用于关闭浮层）、`proxy.py`（代理设置）、`example_generator.py`、`clock.py`、`window.py`（前台窗口 / 按标题找窗口）、`log_sink.py`（日志落点，见 §4.17）、`tray.py`（托盘图标与菜单）、`single_instance.py`（命名互斥量）、`app_launcher.py`（子应用启动/唤起）、`error_formatter.py`。
 - `errors.py`：`SnapTranslateError` 及领域错误（`TranslationError`、`OcrError`、`VocabularyIoError`、`ExampleGenerationError`）。
 
 ### 2.3 `infrastructure/` — 基础设施层（适配器实现端口）
@@ -70,8 +71,9 @@
     因此竞速从 5 路降为 2 路；对拍脚本只比对**日志文本**，删除线路不影响对拍基线中对"标签文案"的断言。
 - `ocr/tesseract.py`：屏幕截取 + Tesseract 识别 + 语言包探测 + `TESSDATA_PREFIX` 处理。
 - `tts/windows_sapi.py`：PowerShell + `System.Speech` 朗读（阻塞/异步两种，与原版超时参数一致）。
-- `persistence/`：`json_vocabulary.py`（三种加载语义见 §4）、`json_settings.py`、`api_key_file.py`、`backup.py`。
-- `input/`：`win32_clipboard.py`、`win32_selection.py`（模拟 Ctrl+C 取词）、`win32_hotkeys.py`（`RegisterHotKey` 消息循环 + 轮询式监听器）、`win32_keys.py`（键名 → 虚拟键码表）、`win32_pointer.py`（鼠标位置）、`win32_input_watcher.py`（"任意键/鼠标键按下"轮询）、`win32_window.py`（抢前台）。
+- `persistence/`：`json_vocabulary.py`（三种加载语义见 §4）、`json_settings.py`、`api_key_file.py`、`backup.py`、`append_log.py`（日志落文件，见 §4.17）。
+- `input/`：`win32_clipboard.py`、`win32_selection.py`（模拟 Ctrl+C 取词）、`win32_hotkeys.py`（`RegisterHotKey` 消息循环 + 轮询式监听器）、`win32_keys.py`（键名 → 虚拟键码表）、`win32_pointer.py`（鼠标位置）、`win32_input_watcher.py`（"任意键/鼠标键按下"轮询）、`win32_window.py`（抢前台 / 按标题找窗口）、`win32_tray.py`（`Shell_NotifyIconW` 托盘图标，零新依赖）、`win32_single_instance.py`（命名互斥量，防重复实例）。
+- `process/app_processes.py`：子进程式子应用监管（自派发启动 / 按窗口标题判定已开 / 唤起 / 退出时收尾）。
 - `network/`：`system_proxy.py`（读 Windows 系统代理）、`proxy_policy.py`（直连/跟随系统/自定义 + 私有地址直连）、`http.py`（统一 GET：`trust_env=False` + 显式 proxies + **代理失败回退直连**）。
 - `llm/deepseek.py`：OpenAI 兼容客户端 + 例句生成提示词 + 402 余额不足识别（原版在桌面端与 Web 端各写了一份）。
 
@@ -89,6 +91,7 @@
 | `GenerateExamplesUseCase` | 批量补全例句，逐条落盘，402 中止 | 同上 |
 | `VocabularyAdminUseCase` | 词表状态、评分重置、备份清理 | `set.py` |
 | `TranslateInputUseCase` | **新增功能**：把用户手敲的中文翻成英文（方向显式传入，其余复用同一翻译端口） | 原版无此路径 |
+| 启动器 | **新增功能**：控制台窗口 + 托盘，负责启动/唤起三个子窗口、单实例、退出收尾（`bootstrap/launcher.py` 组装，`infrastructure/process` 干活） | 原版无此路径 |
 
 ### 2.5 `presentation/` — 表示层
 - `texts.py`：**全部界面文案的唯一出口**（`WindowText` / `StatusText` / `ErrorTitle` / `CollectText` / `ReviewText` / `AdminText` / `WebText`）。Tk 与 Streamlit 共用同一套字符串与格式化函数。
@@ -100,6 +103,8 @@
   - `hotkey_controls.py` / `collect_actions.py` / `translate_transcript.py`：热键校验、收录/删除反馈、翻译记录与"最近 3 条"；
   - `floating_card.py` / `cursor_status.py` / `snip_overlay.py`：悬浮卡片、光标状态条、截图遮罩；
   - `input_box.py`：**新增功能**——中译英浮层输入/输出框（可复用组件：只依赖端口与一个提交回调）；
+  - `launcher_window.py`：**新增功能**——启动器控制台（三个入口按钮 + 常驻托盘 + 退出），
+    只依赖 `AppLauncher` / `TrayIcon` 两个端口，不认识 `subprocess` 与 Win32；
   - `overlay_geometry.py`：浮层共用的几何（`+16` 偏移、夹在屏内、`is_inside` 命中判定）——
     `floating_card` 与 `input_box` 只写一份；
   - `ui_kit.py`：控件工厂 + `UiDispatcher` / `StatusBridge`。
@@ -115,7 +120,9 @@
 ### 2.6 `bootstrap/` — 组装层
 - `container.py`：按配置构造全部适配器与用例（依赖注入的唯一位置）。
 - `wiring.py`：面向入口的四个 `run_*()` 函数。
-- `cli.py`：console_scripts 入口（`snaptranslate` / `-review` / `-review-web` / `-admin`）。
+- `launcher.py`：**新增功能**——一个 exe 分发到四个窗口 + 控制台 + `--self-check`；含单实例与数据目录透传。
+- `web_launcher.py`：**新增功能**——Web 包（含 streamlit）的冻结入口。
+- `cli.py`：console_scripts 入口（`snaptranslate` / `-review` / `-review-web` / `-admin` / `-panel`）。
 - `streamlit_entry.py`：`streamlit run` 所需的脚本入口（自己构造依赖后调用 `presentation.web`）。
 
 > 命令行入口刻意放在 `bootstrap` 而非 `presentation`：入口必须 import `bootstrap.wiring`，
@@ -195,6 +202,16 @@ SnapTranslate重构/
     于是"再按其他键"既能关掉浮层、按键也照常送到原来的软件里；
     鼠标左键落在框内**不算关闭信号**，而是回到输入态（`overlay_geometry.is_inside`）。
     这样"关闭规则"与"复用规则"各由一条明确判据负责，不需要给按键逐一列白名单。
+16. **打包形态：一个 exe 自派发 + 单实例 + 数据跟着 exe**（新增功能）：
+    启动器不复制窗口代码，而是用同一份 exe 加 `--app=…` 起子进程（`SubprocessAppLauncher`），
+    于是 `TranslateApp` / `ReviewApp` / `AdminApp` **一行都不用改**，现有门禁继续有效；
+    "是否已开"以**窗口标题**为准（用户看到的就是窗口），已开则 `force_foreground` 唤起，不重复启动。
+    每个子应用一个命名互斥量——热键是轮询式的，两个划词实例会同时响应同一次划词并互相覆盖 `vocab.json`。
+    数据目录在冻结后取 **exe 所在目录**（`config.paths.is_frozen()`），所以"迁移 = 整个文件夹拷走"。
+17. **日志是端口，不是 `print`**（新增功能）：原版（以及重构初期）用 `print` 输出日志，
+    而打包成 `console=False` 的窗口程序后 `sys.stdout` 是 `None`——第一次构建的自检就是这样静默失败的。
+    现在统一走 `LogSink`：`AppendOnlyLog` 追加写数据目录的 `划词日志.txt`（多线程安全、写失败静默），
+    有控制台时顺带回显；自检报告另外落 `self-check.txt`（窗口程序里退出码就是成败信号）。
 
 ## 5. 验证策略
 
@@ -206,5 +223,6 @@ SnapTranslate重构/
 | 与原版逐函数对拍 | `python scripts/parity_check.py <原版目录>` | 纯函数 + **流程级**（文本翻译主链路、生词收录分支），当前 173 项 0 差异 |
 | Tk 界面冒烟 | `python scripts/gui_smoke.py --with-tk` | 真实创建三个窗口（构造后立即销毁，不进 mainloop）+ **事件链断言**（热键即时同步/四组热键、卡片锚点/不自动消失/输入关闭、代理即时生效、复习评分后卡片前进、**输入框弹出→回车翻译→点框内复用→框外关闭→过期结果丢弃**） |
 | Streamlit 结构对拍 | `python scripts/web_smoke.py` | 用官方 `AppTest` 渲染新页面并与原版逐项比较标题/按钮/下拉框/输入框/小标题 |
+| 打包验收 | `python scripts/build_packages.py` | 构建主包（可加 `--web`）并对**产物**跑 `SnapTranslate.exe --self-check`：数据目录可写 / 日志 / 图标 / 三套依赖装配 / tkinter / 热键监听器 / 托盘注册注销 / 单实例互斥 / 子应用清单 |
 
 > 这些脚本都是"可执行的约束"：分层违规、行为漂移、装配断裂、界面建不起来都会让命令非 0 退出。

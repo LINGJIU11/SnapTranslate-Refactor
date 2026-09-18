@@ -47,12 +47,23 @@ class FakeRecall:
         return type("Outcome", (), {"kind": CollectKind.EMPTY, "word": ""})()
 
 
+class FakeLogSink:
+    """记录日志行（打包后没有控制台，日志走 log_sink）。"""
+
+    def __init__(self) -> None:
+        self.lines: list[str] = []
+
+    def write(self, line: str) -> None:
+        self.lines.append(line)
+
+
 class FakeDeps:
     def __init__(self, translate_outcome: TranslationOutcome) -> None:
         self.selection_use_case = FakeUseCase(translate_outcome)
         self.screenshot_use_case = FakeUseCase(translate_outcome)
         self.collection = FakeCollection()
         self.recall = FakeRecall()
+        self.log_sink = FakeLogSink()
 
     def selection_usecase_factory(self, source_provider, volume_provider):
         return self.selection_use_case

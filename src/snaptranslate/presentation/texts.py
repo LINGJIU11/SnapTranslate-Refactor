@@ -426,11 +426,41 @@ class InputText:
     CLOSE_BUTTON = "关闭"
 
 
+class LauncherText:
+    """启动器控制台 + 托盘的文案（**新增功能**，原版没有统一入口）。"""
+
+    TITLE = "SnapTranslate 控制台"
+    SUBTITLE = "一个入口管三个窗口；关掉本窗口后可继续驻留托盘"
+    STAY_IN_TRAY = "关闭窗口时最小化到托盘常驻"
+    RUNNING = "运行中"
+    STOPPED = "未运行"
+    OPEN_BUTTON = "打开"
+    OPEN_DATA_DIR = "打开数据目录"
+    QUIT = "退出"
+    DATA_DIR_LINE = "数据目录：{path}"
+    LAUNCHED = "已启动：{label}"
+    FOCUSED = "已唤起：{label}"
+    TRAY_TOOLTIP = "SnapTranslate — 双击打开控制台"
+    TRAY_PANEL = "打开控制台"
+    TRAY_QUIT = "退出"
+    TRAY_ITEMS_PREFIX = ""
+    TRAY_HINT = "托盘已就绪：右键图标可切换窗口"
+    TRAY_UNAVAILABLE = "托盘不可用（仍可用本窗口切换；退出后窗口会一起关）"
+
+    #: 三个子应用：``(键名, 按钮文字, 一句话说明)``
+    APPS = (
+        ("translate", "划词翻译", "选中文字后按热键翻译；重启后保持托盘常驻"),
+        ("review", "生词复习", "自评熟练度、批量补例句"),
+        ("admin", "词表管理", "统计 / 重置评分 / 清理备份"),
+    )
+
+
 __all__ = [
     "AdminText",
     "CollectText",
     "ErrorTitle",
     "InputText",
+    "LauncherText",
     "ReviewText",
     "Stage",
     "StatusText",

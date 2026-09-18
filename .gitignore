@@ -30,10 +30,13 @@ vocab.json.tmp
 api_key.txt.tmp
 # 取词日志：每次运行都会追加，且运行中的程序会一直持有句柄（备份/打包时会被锁）
 划词日志.txt
+# 打包产物自检报告（--self-check 生成）
+self-check.txt
 
 # 临时/中间产物（测试与脚本自建，或备份压缩包）
 .tmp-tests/
 .tmp-gui-smoke-review/
 .tmp-diag-review-*/
+.pyinstaller-build/
 *.tmp
 *.zip
