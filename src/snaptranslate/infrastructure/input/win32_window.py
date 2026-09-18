@@ -10,6 +10,7 @@ import ctypes
 from ctypes import wintypes
 
 SW_RESTORE = 9
+SW_SHOW = 5
 
 
 class Win32WindowActivator:
@@ -34,6 +35,8 @@ class Win32WindowActivator:
         """按窗口标题（精确匹配）查句柄；找不到返回 0。
 
         新增功能"启动器"用它判断子窗口是否已开、以及把它唤到前台。
+        **注意**：``FindWindowW`` 连**隐藏**窗口也会返回，所以"开着"不能只看它，
+        还要配合 :meth:`is_visible`（否则"隐藏到托盘"会被误判成"运行中"）。
         """
         if not title:
             return 0
@@ -41,6 +44,29 @@ class Win32WindowActivator:
             return int(self._user32.FindWindowW(None, title))
         except Exception:
             return 0
+
+    def is_visible(self, hwnd: int) -> bool:
+        """窗口是否真的可见（隐藏/最小化到托盘时为假）。"""
+        if hwnd <= 0:
+            return False
+        try:
+            return bool(self._user32.IsWindowVisible(wintypes.HWND(hwnd)))
+        except Exception:
+            return False
+
+    def show_window(self, hwnd: int) -> None:
+        """把窗口显示出来（含"被隐藏"的情形）——``SW_SHOW`` + ``SW_RESTORE``。
+
+        只调 ``force_foreground`` 是不够的：Tk 的 ``withdraw()`` 之后窗口处于未映射状态，
+        必须显式 ``ShowWindow(SW_SHOW)`` 才会重新出现（"控制台隐藏到托盘后再也打不开"就是这个）。
+        """
+        if hwnd <= 0:
+            return
+        try:
+            self._user32.ShowWindow(wintypes.HWND(hwnd), SW_SHOW)
+            self._user32.ShowWindow(wintypes.HWND(hwnd), SW_RESTORE)
+        except Exception:
+            pass
 
     def force_foreground(self, hwnd: int) -> None:
         if hwnd <= 0:

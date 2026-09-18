@@ -141,7 +141,9 @@ python scripts\verify_all.py                  # 上面六项一次跑完，任�
 | `stage1.6-review-advance-fix` | 复习界面评分后卡片前进（回归修复）+ 仓库整理 |
 | `stage1.7-input-box` | 新增功能：中译英输入框（`ctrl+i`） |
 | `stage1.8-packaging` | 打包成 exe：启动器 / 托盘 / 单实例 / 数据跟着 exe |
-| `v2.1.0` | **发布标签**：对应 Releases 里的便携包（源码 + 构建脚本仍在仓库） |
+| `v2.1.0` | 第一次发布：便携包（启动器 / 托盘 / 单实例） |
+| `v2.1.1` | 第二次发布：修掉"划词时闪 PowerShell 窗口" |
+| `v2.1.2` | 第三次发布：控制台状态改诚实五档 + 每行「关闭」「重启」 + 默认不常驻托盘 |
 
 ```powershell
 git tag                     # 看全部标签

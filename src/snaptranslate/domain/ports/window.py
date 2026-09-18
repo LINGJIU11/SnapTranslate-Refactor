@@ -23,7 +23,16 @@ class WindowActivator(Protocol):
         """按窗口标题查句柄；找不到返回 0。
 
         **新增功能**（启动器）用它判断"某个子窗口是否已经开着"，以及把它唤到前台。
+        **注意**：隐藏的窗口也会被找到，所以"开着"还要配合 :meth:`is_visible`。
         """
+        ...
+
+    def is_visible(self, hwnd: int) -> bool:
+        """窗口是否真的可见（隐藏到托盘 / 最小化时为假）。"""
+        ...
+
+    def show_window(self, hwnd: int) -> None:
+        """把窗口显示出来（用于"被隐藏了，需要重新显示"的场景；失败静默）。"""
         ...
 
     def force_foreground(self, hwnd: int) -> None:

@@ -108,3 +108,4 @@ $env:SNAPTRANSLATE_DATA_DIR = "D:\SnapTranslateData"
 |---|---|
 | 2.1.0 | 第一版打包（onedir 便携包 + 启动器/托盘/单实例）。**已知问题**：划词翻译朗读时会闪一个 PowerShell 窗口 |
 | 2.1.1 | 修复闪窗：所有子进程统一走 `infrastructure/process/no_window.py`（`CREATE_NO_WINDOW` + `SW_HIDE`）；附 `tests/test_no_window.py` 静态门禁 |
+| v2.1.2 | 控制台改为**诚实五档状态**（未运行 / 启动中… / 运行中 / 已隐藏 / 无响应）+ 每行「关闭」「重启」+ 打开失败如实报错 + **默认不常驻托盘**（见 `KNOWN_ISSUES.md` §七 N5） |

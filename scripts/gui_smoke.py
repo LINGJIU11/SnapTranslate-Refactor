@@ -298,8 +298,14 @@ def check_input_box() -> None:
 
 
 def check_launcher_panel() -> None:
-    """启动器控制台（新增功能）：真 Tk 构造 + 三个子应用按钮齐全 + 托盘可注册。"""
+    """启动器控制台（新增功能）：真 Tk 构造 + 按钮齐全 + **隐藏窗口能被重新显示**（N5）。
+
+    最后一条用**真实 Tk + 真实 Win32** 验证：把窗口 ``withdraw``（相当于隐藏到托盘）后，
+    ``find_window`` 仍能找到它但 ``is_visible`` 为假，``show_window`` 之后必须重新可见——
+    第一版只 ``force_foreground``，"关掉控制台后再也打不开"就是这个原因。
+    """
     import shutil
+    import tkinter as tk
 
     from snaptranslate.application.deps import LauncherAppDeps
     from snaptranslate.bootstrap.container import Container, DataPaths
@@ -317,7 +323,10 @@ def check_launcher_panel() -> None:
         deps = LauncherAppDeps(
             apps=items,
             launcher=SubprocessAppLauncher(
-                items, command_prefix=["x"], activator=container.window_activator()
+                items,
+                command_prefix=["x"],
+                activator=container.window_activator(),
+                processes=container.process_controller(),
             ),
             tray=container.tray_icon(),
             data_dir=str(tmp),
@@ -330,16 +339,39 @@ def check_launcher_panel() -> None:
         check("LauncherApp 构造", True)
         check("三个子应用按钮齐全", len(items) == 3 and len(app._status_vars) == 3, f"{list(app._status_vars)}")
         check(
-            "托盘状态已写进状态栏",
-            app.status_var.get() in (LauncherText.TRAY_HINT, LauncherText.TRAY_UNAVAILABLE),
-            f"status={app.status_var.get()!r}",
+            "状态列显示为诚实的状态词",
+            all(
+                var.get() in {"未运行", "启动中…", "运行中", "已隐藏", "无响应"}
+                for var in app._status_vars.values()
+            ),
+            f"{[v.get() for v in app._status_vars.values()]}",
         )
-        # 关窗：托盘可用时只隐藏（常驻），托盘不可用时真退出
+        check("托盘状态已写进状态栏", bool(app.status_var.get()), f"status={app.status_var.get()!r}")
+        check("默认不常驻托盘（关窗即退出）", app.stay_var.get() is False)
+
+        # 关窗：默认（不常驻）必须真退出
         app._on_close()
-        still_alive = not app._closing
-        check("关闭按'常驻托盘'分支处理", still_alive == app._tray_ready, f"tray={app._tray_ready} closing={app._closing}")
+        check("未勾选常驻时关窗即退出", app._closing)
         app.quit()
-        check("LauncherApp 退出清理", app._closing)
+
+        # —— 隐藏窗口的"重新显示"（真实 Tk + 真实 Win32）——
+        activator = container.window_activator()
+        probe = tk.Tk()
+        probe.title("SnapTranslate 冒烟-隐藏窗口")
+        probe.geometry("200x120+400+300")
+        probe.update()
+        hwnd = activator.find_window("SnapTranslate 冒烟-隐藏窗口")
+        check("能按标题找到自己开的窗口", bool(hwnd), f"hwnd={hwnd}")
+        check("窗口可见", activator.is_visible(hwnd))
+        probe.withdraw()  # 相当于"隐藏到托盘"
+        probe.update()
+        check("隐藏后 is_visible 为假（但句柄仍在）", not activator.is_visible(hwnd) and bool(activator.find_window("SnapTranslate 冒烟-隐藏窗口")))
+        activator.show_window(hwnd)
+        probe.update()
+        check("show_window 之后重新可见", activator.is_visible(hwnd))
+        activator.force_foreground(hwnd)
+        probe.update()
+        probe.destroy()
     except Exception as exc:  # noqa: BLE001
         check("LauncherApp 构造", False, f"{type(exc).__name__}: {exc}")
     finally:

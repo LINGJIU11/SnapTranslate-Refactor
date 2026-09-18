@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 from snaptranslate.domain.models.launcher import LauncherAppItem
@@ -39,8 +40,11 @@ APP_WEB = "web"
 APP_PANEL = "panel"
 MODE_SELF_CHECK = "self-check"
 
-#: 需要单实例保护的三种子应用（``web`` 是 streamlit，自己会占端口，不重复保护）
-SINGLETON_APPS: tuple[str, ...] = (APP_PANEL, APP_TRANSLATE, APP_REVIEW, APP_ADMIN)
+#: 需要单实例保护的子应用（``web`` 是 streamlit，自己会占端口；``panel`` 只按窗口判重）
+SINGLETON_APPS: tuple[str, ...] = (APP_TRANSLATE, APP_REVIEW, APP_ADMIN)
+
+#: 第二个实例等待"已有窗口出现"的最长时间（秒）——冷启动要 import tkinter
+EXISTING_WINDOW_WAIT_SEC = 15.0
 
 #: ``--app=`` 允许的取值
 APP_CHOICES: tuple[str, ...] = (APP_TRANSLATE, APP_REVIEW, APP_ADMIN, APP_WEB)
@@ -138,9 +142,11 @@ def main(argv: list[str] | None = None, *, guard: SingleInstanceGuard | None = N
     if mode == APP_PANEL:
         return run_launcher_panel(data_dir, guard=guard)
 
-    # 三个子窗口：先抢单实例，抢不到就把已开的那个唤到前台
+    # 三个子窗口：先抢单实例（防"两个划词实例同时响应同一次划词"），
+    # 抢不到就把已开的那个显示并唤到前台；连窗口都找不到时如实告诉用户（别静默退出）
     if not _acquire_single_instance(mode, guard):
-        _focus_existing(mode)
+        if not _focus_existing(mode):
+            _warn_no_window(mode)
         return 0
     return run_child_app(mode, data_dir)
 
@@ -161,12 +167,16 @@ def run_child_app(mode: str, data_dir: str | None = None) -> int:
 
 
 def run_launcher_panel(data_dir: str | None = None, *, guard: SingleInstanceGuard | None = None) -> int:
-    """控制台窗口 + 托盘常驻。"""
-    from snaptranslate.infrastructure.process.app_processes import SubprocessAppLauncher
+    """控制台窗口 + 托盘常驻。
+
+    **控制台自己不抢单实例互斥量**：它不占热键，重复开最多是两个控制台；
+    而互斥量一旦被一个"缩在托盘里看不见"的控制台占住，用户就会陷入
+    "双击打不开、又找不到窗口"的死角（第一版的真实体验）。所以这里只按**窗口**判重：
+    已经有可见的控制台就把它显示并置前，没有就正常开一个新的。
+    """
     from snaptranslate.presentation.tk.launcher_window import LauncherApp
 
-    if not _acquire_single_instance(APP_PANEL, guard):
-        _focus_existing(APP_PANEL)
+    if _focus_existing(APP_PANEL):
         return 0
 
     container = Container(_paths(data_dir))
@@ -188,11 +198,11 @@ class LauncherAppDepsFactory:
         from snaptranslate.application.deps import LauncherAppDeps
         from snaptranslate.infrastructure.process.app_processes import SubprocessAppLauncher
 
-        activator = self._container.window_activator()
         launcher = SubprocessAppLauncher(
             self._items,
             command_prefix=child_command_prefix(self._data_dir),
-            activator=activator,
+            activator=self._container.window_activator(),
+            processes=self._container.process_controller(),
         )
         hotkeys = self._container.translate_settings().load_hotkeys()
         return LauncherAppDeps(
@@ -391,19 +401,48 @@ def _acquire_single_instance(mode: str, guard: SingleInstanceGuard | None) -> bo
     return _guard(guard).acquire(mode)
 
 
-def _focus_existing(mode: str) -> None:
-    """第二个实例：把已开的窗口唤到前台，并当场退出。"""
+def _focus_existing(mode: str) -> bool:
+    """把已开的窗口**显示并**唤到前台；返回是否确实找到了窗口。
+
+    两个细节（都是第一版"打不开"的原因）：
+
+    1. **等一会儿**：冷启动要 import tkinter，窗口可能要几秒才出现；
+       第二实例如果立刻放弃，用户双击后就是"什么都没发生"；
+    2. **先 ShowWindow 再置前**：隐藏到托盘的窗口只 ``SetForegroundWindow`` 是不会出现的。
+    """
     from snaptranslate.infrastructure.input.win32_window import Win32WindowActivator
 
     title = LauncherText.TITLE if mode == APP_PANEL else next(
         (item.window_title for item in launcher_items() if item.key == mode), ""
     )
     if not title:
-        return
+        return False
     activator = Win32WindowActivator()
-    hwnd = activator.find_window(title)
-    if hwnd:
-        activator.force_foreground(hwnd)
+    deadline = time.time() + EXISTING_WINDOW_WAIT_SEC
+    while time.time() < deadline:
+        hwnd = activator.find_window(title)
+        if hwnd:
+            activator.show_window(hwnd)
+            activator.force_foreground(hwnd)
+            return True
+        time.sleep(0.3)
+    return False
+
+
+def _warn_no_window(mode: str) -> None:
+    """抢不到单实例、又找不到窗口时，如实告诉用户怎么办（别静默退出）。"""
+    label = {"translate": "划词翻译", "review": "生词复习", "admin": "词表管理"}.get(mode, mode)
+    message = (
+        f"检测到「{label}」已经在运行，但它的窗口找不到了（可能被隐藏或卡住）。\n\n"
+        "请打开 SnapTranslate 控制台，在对应那一行点「重启」或「关闭」；\n"
+        "也可以直接在任务管理器里结束 SnapTranslate.exe。"
+    )
+    try:
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(None, message, "SnapTranslate", 0x30)
+    except Exception:
+        print(message)
 
 
 __all__ = [

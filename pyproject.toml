@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "snaptranslate"
-version = "2.1.1"
+version = "2.1.2"
 description = "Windows 划词翻译 + 截图 OCR + 生词本复习（分层模块化重构版）"
 readme = "README.md"
 requires-python = ">=3.10"

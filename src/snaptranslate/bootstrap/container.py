@@ -37,6 +37,7 @@ from snaptranslate.domain.ports.hotkey_listener import HotkeyListener
 from snaptranslate.domain.ports.log_sink import LogSink
 from snaptranslate.domain.ports.ocr import OcrEngine
 from snaptranslate.domain.ports.pointer import Pointer
+from snaptranslate.domain.ports.process_control import ProcessController
 from snaptranslate.domain.ports.translator import Translator
 from snaptranslate.domain.ports.tray import TrayIcon
 from snaptranslate.domain.ports.tts import TextToSpeech
@@ -48,6 +49,7 @@ from snaptranslate.infrastructure.input.win32_input_watcher import Win32InputWat
 from snaptranslate.infrastructure.input.win32_pointer import Win32Pointer
 from snaptranslate.infrastructure.input.win32_selection import Win32SelectionReader
 from snaptranslate.infrastructure.input.win32_tray import Win32TrayIcon
+from snaptranslate.infrastructure.process.win32_processes import Win32ProcessController
 from snaptranslate.infrastructure.input.win32_window import Win32WindowActivator
 from snaptranslate.infrastructure.llm.deepseek import DeepSeekExampleGenerator
 from snaptranslate.infrastructure.network import http as network_http
@@ -280,3 +282,7 @@ class Container:
     def tray_icon(self) -> TrayIcon:
         """托盘图标（ctypes ``Shell_NotifyIconW``，零新依赖）。"""
         return Win32TrayIcon()
+
+    def process_controller(self) -> ProcessController:
+        """进程控制（启动器的"关闭/重启"：按窗口找 PID 并结束那个进程）。"""
+        return Win32ProcessController()
