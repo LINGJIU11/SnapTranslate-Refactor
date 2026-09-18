@@ -17,13 +17,12 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 import time
 from typing import Callable, Mapping, Sequence
 
 from snaptranslate.domain.models.launcher import LauncherAppItem
 from snaptranslate.domain.ports.window import WindowActivator
+from snaptranslate.infrastructure.process.no_window import popen_hidden
 
 #: 启动后等待窗口出现的最长时间（秒）——冷启动要 import tkinter，给宽一点
 WINDOW_WAIT_SEC = 12.0
@@ -137,11 +136,8 @@ class SubprocessAppLauncher:
 
     @staticmethod
     def _default_spawn(command: Sequence[str]) -> object:
-        """起子进程：Windows 上不要弹控制台窗口。"""
-        flags = 0
-        if sys.platform == "win32":
-            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
-        return subprocess.Popen(list(command), creationflags=flags, close_fds=True)
+        """起子进程：一律走"不弹窗"参数（打包成窗口程序后尤其重要，见 ``no_window``）。"""
+        return popen_hidden(command, close_fds=True)
 
 
 __all__ = ["POLL_SEC", "WINDOW_WAIT_SEC", "SubprocessAppLauncher"]

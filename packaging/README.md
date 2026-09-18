@@ -101,3 +101,10 @@ $env:SNAPTRANSLATE_DATA_DIR = "D:\SnapTranslateData"
 - **仅 Windows**：整个程序依赖 Win32（`GetAsyncKeyState` / 剪贴板 / `Shell_NotifyIcon`）。
 - 主包的 `--app=web` 会提示"主包不含 Web 复习端"——那是预期行为，请用 Web 包或源码运行。
 - **Web 包还没验收通过**（见上表）：只用主包的话完全不受影响。
+
+## 版本与修复记录（打包相关）
+
+| 版本 | 内容 |
+|---|---|
+| 2.1.0 | 第一版打包（onedir 便携包 + 启动器/托盘/单实例）。**已知问题**：划词翻译朗读时会闪一个 PowerShell 窗口 |
+| 2.1.1 | 修复闪窗：所有子进程统一走 `infrastructure/process/no_window.py`（`CREATE_NO_WINDOW` + `SW_HIDE`）；附 `tests/test_no_window.py` 静态门禁 |

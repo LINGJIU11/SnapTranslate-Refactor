@@ -398,3 +398,26 @@
 - **遗留**：Web 包（含 streamlit）**尚未验收**——服务能起、健康检查 200，但冻结后首页 `/` 仍 404
   （streamlit 1.64 的静态资源路径在 PyInstaller 下没解析到），网页端暂时用源码运行；
   细节与后续方向见 `packaging/README.md`。
+
+### N4 打包后划词翻译会闪 PowerShell 窗口 ← 已修（第一版打包的实际体验问题）
+- **现象**（第一版打包 `v2.1.0` 实测）：划词翻译时每次都会**闪出一个 PowerShell 窗口**。
+- **根因**：朗读（TTS）用 `powershell -Command "Add-Type -AssemblyName System.Speech; ..."` 实现
+  （原版就有的零依赖做法，见 §三 #13）。打包成窗口程序后父进程**没有控制台**，
+  Windows 就会给控制台子程序**新分配一个控制台窗口**；源码运行时父进程有控制台、子进程直接继承，
+  所以这个问题**只在打包后出现**。
+- **修复**：新增 `infrastructure/process/no_window.py`，所有起子进程的地方统一走
+  `run_hidden()` / `popen_hidden()`——两道保险：`CREATE_NO_WINDOW`（不分配控制台）
+  + `STARTUPINFO` 的 `STARTF_USESHOWWINDOW`/`SW_HIDE`（即使分配了也隐藏）。
+  改到的位置：TTS 朗读（`windows_sapi.py`）、启动器拉起子窗口（`app_processes.py`）、
+  源码模式拉起 streamlit（`wiring.py`）。OCR 那条本来就没问题——`pytesseract` 内部已设 `SW_HIDE`。
+- **实测证据**（复现"无控制台父进程起 PowerShell"，枚举 `ConsoleWindowClass` 可见窗口）：
+
+  | 情形 | 新增的可见控制台窗口数 |
+  |---|---|
+  | 修复前（裸 `subprocess.run`） | **1**（就是用户看到的闪窗） |
+  | 修复后（`run_hidden`） | **0** |
+
+- **回归测试**：`tests/test_no_window.py`（6 项）——两道保险的参数检查、`run_hidden`/`popen_hidden` 透传、
+  **静态检查：`src` 里除助手外不允许出现裸的 `subprocess.run/Popen/call/check_output`**
+  （用 AST 扫描，不误伤字符串与注释），外加"检查器本身能抓到裸调用"的自测。
+- **交付**：`v2.1.1` 第二次打包（第一版 `v2.1.0` 保留在 Releases 与本地备份里）。

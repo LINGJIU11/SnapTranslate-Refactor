@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 import tkinter as tk
 
@@ -199,12 +198,12 @@ class LauncherApp:
             pass
 
     def _open_data_dir(self) -> None:
-        """在资源管理器里打开数据目录（词表/设置/备份/日志都在这里）。"""
+        """在资源管理器里打开数据目录（词表/设置/备份/日志都在这里）。
+
+        用系统外壳打开文件夹（``os.startfile``），不起任何子进程——本项目只在 Windows 上跑。
+        """
         try:
-            if sys.platform == "win32":
-                os.startfile(self.deps.data_dir)  # noqa: S606 - 打开自己程序的数据目录
-            else:  # pragma: no cover - 本项目只在 Windows 上跑
-                subprocess.Popen(["xdg-open", self.deps.data_dir])
+            os.startfile(self.deps.data_dir)  # noqa: S606 - 打开自己程序的数据目录
         except OSError:
             self.status_var.set(f"打开失败：{self.deps.data_dir}")
 

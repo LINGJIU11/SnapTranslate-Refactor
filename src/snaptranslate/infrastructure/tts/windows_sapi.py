@@ -3,12 +3,19 @@
 原版用 ``powershell -Command "Add-Type -AssemblyName System.Speech; ..."`` 朗读，
 好处是零新增 Python 依赖，代价是每次朗读都要起一个 PowerShell 进程（见 KNOWN_ISSUES.md #6）。
 重构**不改实现**，只是把这份脚本收拢到一处，并区分阻塞/异步两种用法。
+
+**必须走 :func:`~snaptranslate.infrastructure.process.no_window.run_hidden`**：
+打包成窗口程序后父进程没有控制台，直接 ``subprocess.run(["powershell", ...])``
+会让 Windows 给 PowerShell 新分配一个控制台窗口——用户看到"翻译一下闪个黑框"
+（KNOWN_ISSUES.md §八 N3，第一版打包的实际体验问题）。
 """
 
 from __future__ import annotations
 
 import subprocess
 import threading
+
+from snaptranslate.infrastructure.process.no_window import run_hidden
 
 
 def build_speak_script(text: str, volume: int, prefer_en: bool) -> str:
@@ -40,7 +47,7 @@ class WindowsSapiTts:
             return
         script = build_speak_script(str(text), volume, prefer_en)
         try:
-            subprocess.run(
+            run_hidden(
                 ["powershell", "-NoProfile", "-Command", script],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

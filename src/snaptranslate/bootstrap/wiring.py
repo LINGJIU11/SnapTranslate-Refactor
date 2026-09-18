@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from pathlib import Path
 
@@ -61,4 +60,7 @@ def run_review_web(data_dir: str | None = None) -> None:
     command = [sys.executable, "-m", "streamlit", "run", str(entry)]
     if data_dir:
         command.extend(["--", "--data-dir", data_dir])
-    raise SystemExit(subprocess.call(command))
+    # 走"不弹窗"参数：窗口程序（打包后）里起控制台子进程会闪一个黑框
+    from snaptranslate.infrastructure.process.no_window import run_hidden
+
+    raise SystemExit(run_hidden(command).returncode)
