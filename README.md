@@ -139,6 +139,9 @@ python scripts\verify_all.py                  # 上面六项一次跑完，任�
 | `stage1.4-proxy` | 代理支持（直连 / 跟随系统 / 自定义） |
 | `stage1.5-prune-and-log-label` | 砍掉失效线路（竞速 5 路 → 2 路）；引擎标签只进日志 |
 | `stage1.6-review-advance-fix` | 复习界面评分后卡片前进（回归修复）+ 仓库整理 |
+| `stage1.7-input-box` | 新增功能：中译英输入框（`ctrl+i`） |
+| `stage1.8-packaging` | 打包成 exe：启动器 / 托盘 / 单实例 / 数据跟着 exe |
+| `v2.1.0` | **发布标签**：对应 Releases 里的便携包（源码 + 构建脚本仍在仓库） |
 
 ```powershell
 git tag                     # 看全部标签
@@ -185,10 +188,15 @@ python entrypoints\main.py                     # 划词翻译（按 ctrl+i 试�
 
 ## 打包成 exe（便携版）
 
+> **仓库只放源码与构建脚本**：exe / 便携包不进版本库（`.gitignore` 排除了 `dist/`、`releases/`、`*.exe`、`*.zip`）。
+> 想直接用的人请到 **[Releases](https://github.com/LINGJIU11/SnapTranslate-Refactor/releases)** 下载
+> `SnapTranslate-*-win64-portable.zip`（解压即用，附 `使用说明.txt`）。
+
 ```powershell
 pip install pyinstaller                       # PyInstaller ≥ 6.15 才支持 Python 3.14
 python scripts\build_packages.py              # 主包：启动器 + 托盘 + 三个 Tk 应用（约 52 MB）
-python scripts\build_packages.py --web        # 再加一个含 streamlit 的 Web 包（约 172 MB）
+python scripts\build_packages.py --web        # 再加一个含 streamlit 的 Web 包（约 195 MB）
+python scripts\make_release.py --tag v2.1.0   # 打成发布用便携 zip（加 --upload 可直接发 Release）
 ```
 
 产物在 `dist/`，**数据跟着 exe**（`vocab.json` / 设置 / `backups/` / 日志 / 自检报告都在 exe 同级目录），

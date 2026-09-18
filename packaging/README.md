@@ -34,6 +34,22 @@ dist\SnapTranslate\SnapTranslate.exe --self-check
 > `streamlit.web.server.server` 的静态目录改成绝对路径，或退到 `streamlit.web.cli` +
 > 显式端口的组合再验证。
 
+## 发布（exe 只进 Release，仓库只留源码）
+
+**约定**：仓库里**不放** exe / 便携包（`.gitignore` 已排除 `dist/`、`releases/`、`*.exe`、`*.zip`），
+想改代码的人 `git clone` 拿到的就是纯源码 + 构建脚本；要"下载即用"的人从 **Releases** 拿便携包。
+
+```powershell
+python scripts\build_packages.py                        # 1) 打包（自动跑产物自检）
+python scripts\make_release.py --tag v2.1.0             # 2) 生成 releases\SnapTranslate-v2.1.0-win64-portable.zip
+python scripts\make_release.py --tag v2.1.0 --upload    # 3) 建/更新 GitHub Release 并上传（需 GITHUB_TOKEN）
+```
+
+第 3 步也可以手动做：在 GitHub 上 `Releases → Draft a new release`，选标签后把 zip 拖进去。
+
+`make_release.py` 做的事：清掉本机运行期数据（`vocab.json` / 设置 / 日志 / 自检报告）→
+打成带顶层目录的便携 zip → 附一份 `使用说明.txt`；上传是幂等的（同名资产先删后传）。
+
 ## 用法（主包）
 
 ```powershell

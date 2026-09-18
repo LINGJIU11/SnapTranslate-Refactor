@@ -40,3 +40,7 @@ self-check.txt
 .pyinstaller-build/
 *.tmp
 *.zip
+
+# 发布产物：exe 与便携包**只作为 GitHub Release 资产**，仓库里只留源码与构建脚本
+releases/
+*.exe
